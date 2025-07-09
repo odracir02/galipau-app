@@ -2,7 +2,7 @@
 
 > A custom React-based application for managing t-shirt orders, quotes, and invoices for a small printing business.
 
-✏️ This project was started as a tool for my father’s t-shirt brand and is now being developed as part of my portfolio.
+✏️ This project was started as a tool for my t-shirt brand and is now being developed as part of my portfolio.
 
 ## ✨ Features
 
