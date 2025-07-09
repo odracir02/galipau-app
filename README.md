@@ -16,7 +16,7 @@
 
 - [React](https://reactjs.org/)
 - [Vite](https://vitejs.dev/)
-- [Tailwind CSS](https://tailwindcss.com/) (soon)
+- [Bootstrap](https://getbootstrap.com/) (for layout and styling)
 - [Git + GitHub](https://github.com/odracir02/galipau-app)
 
 ## 📦 Setup
