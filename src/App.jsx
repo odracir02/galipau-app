@@ -1,10 +1,15 @@
-import QuoteForm from './QuoteForm';
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import QuoteForm from "./components/QuoteForm";
+import BudgetHistory from "./components/BudgetHistory";
 
 function App() {
   return (
-    <div>
-      <QuoteForm />
-    </div>
+    <Router>
+      <Routes>
+        <Route path="/" element={<QuoteForm />} />
+        <Route path="/historial" element={<BudgetHistory />} />
+      </Routes>
+    </Router>
   );
 }
 

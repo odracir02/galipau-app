@@ -1,11 +1,13 @@
 import { useState, useEffect } from "react";
-import { getProductos } from "./services/getProductos";
+import { getProductos } from "../services/getProductos";
+import { Link } from "react-router-dom";
 
 function QuoteForm() {
   const [clientName, setClientName] = useState("");
   const [printType, setPrintType] = useState("DTF");
   const [productos, setProductos] = useState([]);
   const [quoteResult, setQuoteResult] = useState(null);
+  const [saved, setSaved] = useState(false);
 
   const [sizeEntries, setSizeEntries] = useState([
     {
@@ -31,7 +33,7 @@ function QuoteForm() {
     str
       ?.toLowerCase()
       .normalize("NFD")
-      .replace(/[^\w\s]/g, "")
+      .replace(/[̀-ͯ]/g, "")
       .replace(/\s+/g, " ")
       .trim();
 
@@ -90,7 +92,7 @@ function QuoteForm() {
           normalizeString(p.tipo) === normalizeString(entry.tipo) &&
           normalizeString(p.proveedor) === normalizeString(entry.proveedor) &&
           normalizeString(p.modelo) === normalizeString(entry.modelo) &&
-          normalizeColor(p.color) === normalizeColor(entry.color) &&
+          normalizeString(p.color) === normalizeColor(entry.color) &&
           normalizeString(p.talla) === normalizeString(entry.size)
         );
       });
@@ -136,6 +138,20 @@ function QuoteForm() {
     };
 
     setQuoteResult(formData);
+    setSaved(false); // No se guarda hasta que se pulse el botón de guardar
+  };
+
+  const handleGuardarPresupuesto = () => {
+    if (!quoteResult || saved) return;
+
+    const stored =
+      JSON.parse(localStorage.getItem("historialPresupuestos")) || [];
+    const actualizado = [
+      ...stored,
+      { ...quoteResult, fecha: new Date().toISOString() },
+    ];
+    localStorage.setItem("historialPresupuestos", JSON.stringify(actualizado));
+    setSaved(true);
   };
 
   return (
@@ -346,6 +362,9 @@ function QuoteForm() {
         <button type="submit" className="btn btn-primary">
           Calcular presupuesto
         </button>
+        <Link to="/historial" className="btn btn-outline-secondary ms-2">
+          Ver historial de presupuestos
+        </Link>
       </form>
 
       {quoteResult && (
@@ -391,7 +410,8 @@ function QuoteForm() {
             Total de prendas: {quoteResult.totalQuantity}
           </h5>
           <h5>
-            Subtotal sin descuento: {quoteResult.subtotalSinDescuento.toFixed(2)} €
+            Subtotal sin descuento:{" "}
+            {quoteResult.subtotalSinDescuento.toFixed(2)} €
           </h5>
           <h5>
             Descuento aplicado ({quoteResult.descuentoPorcentaje}%): -
@@ -400,6 +420,14 @@ function QuoteForm() {
           <h4 className="mt-3">
             Total final: {quoteResult.totalPresupuesto.toFixed(2)} €
           </h4>
+
+          <button
+            className="btn btn-success mt-3"
+            onClick={handleGuardarPresupuesto}
+            disabled={saved}
+          >
+            {saved ? "Presupuesto guardado" : "Guardar presupuesto"}
+          </button>
         </div>
       )}
     </div>
