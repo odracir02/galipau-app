@@ -138,7 +138,7 @@ function QuoteForm() {
     };
 
     setQuoteResult(formData);
-    setSaved(false); // No se guarda hasta que se pulse el botón de guardar
+    setSaved(false);
   };
 
   const handleGuardarPresupuesto = () => {
@@ -213,6 +213,19 @@ function QuoteForm() {
                   )
               ),
             ];
+
+            const productoSeleccionado = productos.find(
+              (p) =>
+                normalizeString(p.tipo) === normalizeString(entry.tipo) &&
+                normalizeString(p.proveedor) === normalizeString(entry.proveedor) &&
+                normalizeString(p.modelo) === normalizeString(entry.modelo) &&
+                normalizeString(p.color) === normalizeColor(entry.color) &&
+                normalizeString(p.talla) === normalizeString(entry.size)
+            );
+
+            const precioUnitario = productoSeleccionado
+              ? parseFloat(productoSeleccionado.coste || 0)
+              : null;
 
             return (
               <div className="row g-2 mb-2" key={entry.id}>
@@ -298,6 +311,11 @@ function QuoteForm() {
                       </option>
                     ))}
                   </select>
+                  {precioUnitario !== null && (
+                    <small className="text-muted d-block mt-1">
+                      💰 Precio unitario: {precioUnitario.toFixed(2)} €
+                    </small>
+                  )}
                 </div>
                 <div className="col-md-1">
                   <input
@@ -410,8 +428,7 @@ function QuoteForm() {
             Total de prendas: {quoteResult.totalQuantity}
           </h5>
           <h5>
-            Subtotal sin descuento:{" "}
-            {quoteResult.subtotalSinDescuento.toFixed(2)} €
+            Subtotal sin descuento: {quoteResult.subtotalSinDescuento.toFixed(2)} €
           </h5>
           <h5>
             Descuento aplicado ({quoteResult.descuentoPorcentaje}%): -
