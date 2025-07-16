@@ -8,6 +8,7 @@ function DTFFormFields({ area, onChange }) {
         placeholder="Ej: 300"
         value={area || ""}
         onChange={(e) => onChange(Number(e.target.value))}
+        required
       />
     </div>
   );

@@ -35,7 +35,7 @@ function BloquePresupuesto({
 
   return (
     <div className="border rounded p-3 mb-4 bg-light">
-      <h5>🧱 Bloque {index + 1}</h5>
+      <h5>Tipo {index + 1}</h5>
 
       <div className="mb-3">
         <label className="form-label">Tipo de estampado</label>

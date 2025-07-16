@@ -8,6 +8,7 @@ function SerigrafiaFormFields({ numColores, onChange }) {
         placeholder="Ej: 2"
         value={numColores || ""}
         onChange={(e) => onChange(Number(e.target.value))}
+        required
       />
     </div>
   );

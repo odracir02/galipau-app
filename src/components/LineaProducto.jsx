@@ -14,6 +14,7 @@ function LineaProducto({
           className="form-select"
           value={linea.tipo}
           onChange={(e) => onChange("tipo", e.target.value)}
+          required
         >
           <option value="Camiseta">Camiseta</option>
           <option value="Sudadera">Sudadera</option>
@@ -27,6 +28,7 @@ function LineaProducto({
           className="form-select"
           value={linea.proveedor}
           onChange={(e) => onChange("proveedor", e.target.value)}
+          required
         >
           <option value="">Selecciona</option>
           {proveedores.map((prov) => (
@@ -43,6 +45,7 @@ function LineaProducto({
           className="form-select"
           value={linea.modelo}
           onChange={(e) => onChange("modelo", e.target.value)}
+          required
         >
           <option value="">Selecciona</option>
           {modelos.map((mod) => (
@@ -59,6 +62,7 @@ function LineaProducto({
           className="form-select"
           value={linea.size}
           onChange={(e) => onChange("size", e.target.value)}
+          required
         >
           <option value="">Selecciona</option>
           {tallas.map((t) => (
@@ -75,6 +79,7 @@ function LineaProducto({
           className="form-select"
           value={linea.color}
           onChange={(e) => onChange("color", e.target.value)}
+          required
         >
           <option value="">Selecciona</option>
           {colores.map((c) => (
@@ -93,6 +98,7 @@ function LineaProducto({
           min="1"
           value={linea.quantity}
           onChange={(e) => onChange("quantity", e.target.value)}
+          required
         />
       </div>
     </div>

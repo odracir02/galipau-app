@@ -12,6 +12,7 @@ function QuoteForm() {
       estampado: "DTF",
       area: null,
       numColores: null,
+      zonas: 1,
       lineas: [
         {
           tipo: "Camiseta",
@@ -69,6 +70,7 @@ function QuoteForm() {
         estampado: "DTF",
         area: null,
         numColores: null,
+        zonas: 1,
         lineas: [
           {
             tipo: "Camiseta",
@@ -98,52 +100,69 @@ function QuoteForm() {
       }))
     );
 
-    const lineasValidas = todasLasLineas.filter(
-      (l) =>
-        l.tipo &&
-        l.proveedor &&
-        l.modelo &&
-        l.color &&
-        l.size &&
-        l.quantity &&
-        l.estampado
-    );
-
-    if (lineasValidas.length === 0) return;
-
     let totalPrendas = 0;
     let subtotalSinDescuento = 0;
+    let beneficioTotal = 0;
 
-    const lineasConPrecio = lineasValidas.map((linea) => {
+    const lineasConPrecio = todasLasLineas.map((linea) => {
       const unidades = parseInt(linea.quantity);
       const zonas = parseInt(linea.zonas) || 1;
       totalPrendas += unidades;
 
+      const producto = productos.find(
+        (p) =>
+          p.tipo === linea.tipo &&
+          p.proveedor === linea.proveedor &&
+          p.modelo === linea.modelo &&
+          p.talla === linea.size &&
+          ((linea.color.toLowerCase() === "blanco" &&
+            p.color.toLowerCase().includes("blanco")) ||
+            (linea.color.toLowerCase() === "color" &&
+              !p.color.toLowerCase().includes("blanco")))
+      );
+
+      const costePrenda = producto ? parseFloat(producto.coste || 0) : 0;
+
       let precioUnitario = 0;
       let subtotal = 0;
+      let beneficioLinea = 0;
 
       if (linea.estampado === "DTF") {
         const costeFilm = (linea.area || 0) * costePorCm2;
         const costeClienteFilm = costeFilm * 2;
         const filmPorUnidad = costeClienteFilm / unidades;
         const manoObraUnidad = zonas * precioManoObra;
-        precioUnitario = filmPorUnidad + manoObraUnidad;
+        const beneficioFilmTotal = costeClienteFilm - costeFilm;
+        const beneficioManoObra = unidades * zonas * precioManoObra;
+        precioUnitario = costePrenda + filmPorUnidad + manoObraUnidad;
+        const beneficioPrenda =
+          precioUnitario - filmPorUnidad - manoObraUnidad - costePrenda;
+        beneficioLinea =
+          beneficioPrenda * unidades + beneficioFilmTotal + beneficioManoObra;
       }
 
       if (linea.estampado === "Serigrafía") {
         const costeBastidorTotal = zonas * precioBastidor;
         const costeManoObraTotal = zonas * unidades * precioManoObra;
         const totalBloque = costeBastidorTotal + costeManoObraTotal;
-        precioUnitario = totalBloque / unidades;
+        const extraPorUnidad = totalBloque / unidades;
+        precioUnitario = costePrenda + extraPorUnidad;
+        const beneficioPrenda = precioUnitario - extraPorUnidad - costePrenda;
+        const beneficioManoObra = unidades * zonas * precioManoObra;
+        const beneficioBastidor = zonas * precioBastidor;
+        beneficioLinea =
+          beneficioPrenda * unidades + beneficioManoObra + beneficioBastidor;
       }
 
       subtotal = precioUnitario * unidades;
       subtotalSinDescuento += subtotal;
+      beneficioTotal += beneficioLinea;
 
       return {
         ...linea,
         precioUnitario,
         subtotal,
+        beneficioLinea,
       };
     });
 
@@ -163,6 +182,7 @@ function QuoteForm() {
       descuentoPorcentaje,
       descuento,
       total,
+      beneficioTotal,
     });
 
     setSaved(false);
@@ -185,38 +205,43 @@ function QuoteForm() {
     <div className="container mt-5">
       <h2 className="mb-4">Generar presupuesto</h2>
 
-      <div className="mb-3">
-        <label className="form-label">Nombre del cliente</label>
-        <input
-          type="text"
-          className="form-control"
-          value={clientName}
-          onChange={(e) => setClientName(e.target.value)}
-        />
-      </div>
-
-      {bloques.map((bloque, i) => (
-        <BloquePresupuesto
-          key={bloque.id}
-          bloque={bloque}
-          index={i}
-          onBloqueChange={handleChangeBloque}
-          onLineaChange={handleChangeLinea}
-          onAddLinea={addLinea}
-          productos={productos}
-        />
-      ))}
-
-      <button className="btn btn-primary mt-3" onClick={addBloque}>
-        + Añadir bloque
-      </button>
-
-      <button
-        className="btn btn-success mt-3 ms-2"
-        onClick={handleCalcularPresupuesto}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleCalcularPresupuesto();
+        }}
       >
-        Calcular presupuesto
-      </button>
+        <div className="mb-3">
+          <label className="form-label">Nombre del cliente</label>
+          <input
+            type="text"
+            className="form-control"
+            value={clientName}
+            onChange={(e) => setClientName(e.target.value)}
+            required
+          />
+        </div>
+
+        {bloques.map((bloque, i) => (
+          <BloquePresupuesto
+            key={bloque.id}
+            bloque={bloque}
+            index={i}
+            onBloqueChange={handleChangeBloque}
+            onLineaChange={handleChangeLinea}
+            onAddLinea={addLinea}
+            productos={productos}
+          />
+        ))}
+
+        <button className="btn btn-primary mt-3" type="button" onClick={addBloque}>
+          + Añadir bloque
+        </button>
+
+        <button type="submit" className="btn btn-success mt-3 ms-2">
+          Calcular presupuesto
+        </button>
+      </form>
 
       <Link to="/historial" className="btn btn-outline-secondary ms-2 mt-3">
         Ver historial
@@ -225,12 +250,8 @@ function QuoteForm() {
       {quoteResult && (
         <div className="mt-5">
           <h4>Resumen del presupuesto</h4>
-          <p>
-            <strong>Cliente:</strong> {quoteResult.clientName}
-          </p>
-          <p>
-            <strong>Total de prendas:</strong> {quoteResult.totalPrendas}
-          </p>
+          <p><strong>Cliente:</strong> {quoteResult.clientName}</p>
+          <p><strong>Total de prendas:</strong> {quoteResult.totalPrendas}</p>
 
           <table className="table table-bordered">
             <thead>
@@ -244,6 +265,7 @@ function QuoteForm() {
                 <th>Estampado</th>
                 <th>€/unidad</th>
                 <th>Subtotal</th>
+                <th>Beneficio</th>
               </tr>
             </thead>
             <tbody>
@@ -258,20 +280,25 @@ function QuoteForm() {
                   <td>{l.estampado}</td>
                   <td>{l.precioUnitario.toFixed(2)} €</td>
                   <td>{l.subtotal.toFixed(2)} €</td>
+                  <td>{l.beneficioLinea.toFixed(2)} €</td>
                 </tr>
               ))}
             </tbody>
           </table>
 
           <h5>
-            Subtotal sin descuento:{" "}
-            {quoteResult.subtotalSinDescuento.toFixed(2)} €
+            Subtotal sin descuento: {quoteResult.subtotalSinDescuento.toFixed(2)} €
           </h5>
           <h5>
             Descuento aplicado ({quoteResult.descuentoPorcentaje}%): -
             {quoteResult.descuento.toFixed(2)} €
           </h5>
-          <h4>Total final: {quoteResult.total.toFixed(2)} €</h4>
+          <h4 className="mt-3">
+            Total final para el cliente: {quoteResult.total.toFixed(2)} €
+          </h4>
+          <h5 className="mt-2 text-success">
+            Beneficio estimado: {quoteResult.beneficioTotal.toFixed(2)} €
+          </h5>
 
           <button
             className="btn btn-success"
