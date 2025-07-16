@@ -35,7 +35,7 @@ function BloquePresupuesto({
 
   return (
     <div className="border rounded p-3 mb-4 bg-light">
-      <h5>Bloque {index + 1}</h5>
+      <h5>🧱 Bloque {index + 1}</h5>
 
       <div className="mb-3">
         <label className="form-label">Tipo de estampado</label>
@@ -46,6 +46,20 @@ function BloquePresupuesto({
         >
           <option value="DTF">DTF</option>
           <option value="Serigrafía">Serigrafía</option>
+        </select>
+      </div>
+
+      {/* Nueva sección: Número de zonas */}
+      <div className="mb-3">
+        <label className="form-label">Número de zonas estampadas</label>
+        <select
+          className="form-select w-auto"
+          value={bloque.zonas || 1}
+          onChange={(e) => handleBloqueFieldChange("zonas", parseInt(e.target.value))}
+        >
+          <option value={1}>1 zona (ej. frontal)</option>
+          <option value={2}>2 zonas (frontal + espalda)</option>
+          <option value={3}>3 zonas o más</option>
         </select>
       </div>
 
