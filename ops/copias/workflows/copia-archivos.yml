@@ -45,13 +45,13 @@ jobs:
           test -n "$SUPABASE_URL" && test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo "::error::Supabase secrets are not set"; exit 1; }
           echo "$AGE_RECIPIENT" | grep -Eq '^age1[0-9a-z]{58}$' || { echo "::error::Variable AGE_RECIPIENT must be an age public key"; exit 1; }
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: ${{ vars.APP_REPOSITORY }}
           path: app
           sparse-checkout: ops/copias
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
 

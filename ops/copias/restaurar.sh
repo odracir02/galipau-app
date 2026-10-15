@@ -32,11 +32,15 @@ echo "Loading data (single transaction)..."
 psql "$DESTINO" -q -v ON_ERROR_STOP=1 --single-transaction -f "$CARPETA/datos.sql"
 
 echo "Re-linking the owner account ($EMAIL)..."
-psql "$DESTINO" -q -v ON_ERROR_STOP=1 -v email="$EMAIL" \
-  -c "update public.propietario set user_id = (select id from auth.users where email = :'email')"
-psql "$DESTINO" -qtAX -v ON_ERROR_STOP=1 -v email="$EMAIL" \
-  -c "select count(*) from public.propietario p join auth.users u on u.id = p.user_id where u.email = :'email'" | grep -qx 1 \
-  || { echo "Owner account not found: create the user in Supabase Auth first." >&2; exit 1; }
+# SQL on stdin: psql does not interpolate :'variables' in -c commands
+psql "$DESTINO" -q -v ON_ERROR_STOP=1 -v email="$EMAIL" <<'SQL'
+update public.propietario set user_id = (select id from auth.users where email = :'email');
+SQL
+vinculado=$(psql "$DESTINO" -qtAX -v ON_ERROR_STOP=1 -v email="$EMAIL" <<'SQL'
+select count(*) from public.propietario p join auth.users u on u.id = p.user_id where u.email = :'email';
+SQL
+)
+[ "$vinculado" = "1" ] || { echo "Owner account not found: create the user in Supabase Auth first." >&2; exit 1; }
 
 echo "Verifying..."
 psql "$DESTINO" -qtAX -v ON_ERROR_STOP=1 -f "$DIR/manifiesto.sql" > "$CARPETA/manifiesto-restaurado.json"

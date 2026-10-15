@@ -66,7 +66,7 @@ jobs:
           echo "$AGE_RECIPIENT" | grep -Eq '^age1[0-9a-z]{58}$' || { echo "::error::Variable AGE_RECIPIENT must be an age public key"; exit 1; }
 
       - name: Get migrations and verification tools from the app repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ vars.APP_REPOSITORY }}
           path: app
@@ -148,7 +148,7 @@ jobs:
           rm -rf work
 
       - name: Store daily copy (artifact, 30 days)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: galipau-db-${{ env.STAMP }}
           path: out/
@@ -171,12 +171,16 @@ jobs:
         run: |
           estado=$([ "${{ job.status }}" = "success" ] && echo correcta || echo fallida)
           echo "ESTADO=$estado" >> "$GITHUB_ENV"
+          # SQL is sent on stdin: psql does not interpolate :'variables' in -c commands
           "$PGBIN/psql" "$SUPABASE_DB_URL" -q -v ON_ERROR_STOP=1 \
             -v estado="$estado" -v tamano="${SIZE:-0}" -v sha="${SHA:-}" -v filas="${FILAS:-0}" \
             -v segundos="$(( $(date +%s) - ${INICIO:-$(date +%s)} ))" \
-            -v run="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
-            -c "insert into public.registro_copias (tipo, estado, tamano_bytes, sha256, detalle) values ('base_datos', :'estado', nullif(:'tamano', '0')::bigint, nullif(:'sha', ''), jsonb_build_object('ejecucion', :'run', 'filas', :'filas'::bigint, 'segundos', :'segundos'::int))" \
+            -v run="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" <<'SQL' \
             || echo "::warning::Could not record the result in Supabase"
+          insert into public.registro_copias (tipo, estado, tamano_bytes, sha256, detalle)
+          values ('base_datos', :'estado', nullif(:'tamano', '0')::bigint, nullif(:'sha', ''),
+                  jsonb_build_object('ejecucion', :'run', 'filas', :'filas'::bigint, 'segundos', :'segundos'::int));
+          SQL
 
       - name: Summary
         if: always()
