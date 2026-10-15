@@ -1,39 +1,96 @@
 # 🐸 Galipau App
 
-> A custom React-based application for managing t-shirt orders, quotes, and invoices for a small printing business.
+> Management application for a screen printing and garment customisation workshop: quote calculator, customers, catalogue and backups — with orders, production, calendar, inventory and profit & loss planned.
 
-✏️ This project was started as a tool for my t-shirt brand and is now being developed as part of my portfolio.
+Galipau App runs **locally on a Windows PC** for a single owner. It needs no cloud services and has no recurring infrastructure cost. Data is stored in a local SQLite database with automatic, verified backups. Other devices (e.g. a phone) can optionally use it over the local network.
 
 ## ✨ Features
 
-- Product catalog with size, color, and pricing logic
-- Quote generator with DTF and screen printing options
-- Automatic price calculation
-- Invoice and ticket generation (coming soon)
-- Designed to replace messy Excel workflows
+- Quote calculator for DTF and screen printing (multiple blocks and lines, live validation)
+- Customers API (create, edit, search, archive)
+- Product catalogue (suppliers → models → variants), costs stored as integer cents
+- Single-owner authentication (scrypt password hashing, server-side sessions, brute-force protection)
+- Automatic and manual backups using SQLite's online backup API, integrity-checked, with optional off-site copy (e.g. a OneDrive folder) and controlled restore
+- Versioned database migrations with an automatic backup before every schema change
 
 ## 🛠️ Built With
 
-- [React](https://reactjs.org/)
-- [Vite](https://vitejs.dev/)
-- [Bootstrap](https://getbootstrap.com/) (for layout and styling)
-- [Firebase (Firestore)](https://firebase.google.com/)
-- [Git + GitHub](https://github.com/odracir02/galipau-app)
-- [Vitest](https://vitest.dev/) + [Testing Library](https://testing-library.com/) (automated tests)
+- [React](https://react.dev/) + [Vite](https://vitejs.dev/) + [Bootstrap](https://getbootstrap.com/)
+- [Express](https://expressjs.com/) (local API server)
+- [SQLite](https://sqlite.org/) via [better-sqlite3](https://github.com/WiseLibs/better-sqlite3)
+- [Vitest](https://vitest.dev/) + [Testing Library](https://testing-library.com/)
+- Firebase/Firestore: legacy catalogue source, kept only until the catalogue is migrated
 
-## 📦 Setup
+## 🚀 Getting started (Windows)
+
+Requirements: [Node.js](https://nodejs.org/) 22.9 or newer, and Git.
 
 ```bash
 git clone https://github.com/odracir02/galipau-app.git
 cd galipau-app
 npm install
-npm run dev
+npm run build
+npm start
 ```
 
-## 🧪 Quality checks
+Open <http://localhost:4173>. On first use, create the access password **from the PC itself** (it cannot be created from another device).
+
+**Daily use:** create a desktop shortcut to `scripts\windows\Galipau.cmd`. It starts the server (if it is not running) and opens the app. The server runs in a minimised window; closing that window stops the app safely.
+
+Tip: in Edge or Chrome, use *Install this site as an app* to get a separate window and taskbar icon.
+
+### Where is my data?
+
+| What | Default location |
+|---|---|
+| Database | `%LOCALAPPDATA%\GalipauApp\galipau.db` |
+| Local backups | `%LOCALAPPDATA%\GalipauApp\copias\` |
+
+⚠️ Backups kept only on the same PC do **not** protect against hardware failure, theft or loss. In **Copias de seguridad**, configure an external folder (for example inside OneDrive, or a USB drive) so every finished backup is also copied there. Never put the live database itself in a synced folder.
+
+### Configuration
+
+Copy `.env.example` to `.env` to change the port, data folder, backup folder, backup frequency, local network access or catalogue source. All settings are optional.
+
+### Access from a phone (optional)
+
+Set `GALIPAU_HOST=0.0.0.0` in `.env` and restart. Allow the Windows firewall prompt **for private networks only**. Then open `http://<PC-IP>:4173` from a device on the same Wi-Fi. Never forward router ports to expose the app to the internet.
+
+### Maintenance commands
 
 ```bash
-npm test        # unit and UI tests
+npm run copias -- listar               # list backups
+npm run copias -- crear                # create a backup (app stopped)
+npm run copias -- restaurar <file>     # restore a backup (app stopped)
+npm run contrasena:restablecer         # forgotten password (requires access to the PC)
+```
+
+### Updating
+
+```bash
+git pull
+npm install
+npm run build
+```
+
+Then restart the app. Pending database migrations are applied automatically after a backup.
+
+## 🧑‍💻 Development
+
+```bash
+npm run dev          # UI + API in one process (Vite), using a separate dev database in ./data/dev
+npm run db:ejemplo   # load a fictitious sample catalogue into the dev database
+npm test             # unit, API, database and UI tests
 npm run lint
 npm run build
+```
+
+Set `VITE_CATALOGO_FUENTE=local` in `.env` to make the quote form read the catalogue from SQLite instead of the legacy Firestore collection.
+
+## 📁 Project structure
+
+```
+src/        React UI (app shell, session, pages, domain logic shared with the server)
+server/     Express API, SQLite access, migrations, backups, authentication
+scripts/    Windows launcher
 ```
