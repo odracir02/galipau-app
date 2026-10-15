@@ -45,3 +45,13 @@ CLAUDE.local.md
 
 # Internal development documentation (not published)
 /docs/
+
+# Local data: databases, backups and uploaded files (never published)
+/data/
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite
+*.sqlite3
+*.parcial
