@@ -70,6 +70,9 @@ function PaginaCopiasNube({ obtenerCliente = obtenerClienteSupabase }) {
               {Object.entries(TIPOS).map(([tipo, nombre]) => (
                 <li key={tipo}>
                   <strong>{nombre}:</strong> {ultimas[tipo] ? `${fecha(ultimas[tipo].creada_en)} — ${ultimas[tipo].estado === "correcta" ? "verificada" : "fallida"}` : "ninguna"}
+                  {ultimas[tipo]?.detalle?.ejecucion?.startsWith("https://github.com/") && (
+                    <a className="ms-2 small" href={ultimas[tipo].detalle.ejecucion} target="_blank" rel="noreferrer">Ver detalles</a>
+                  )}
                 </li>
               ))}
             </ul>

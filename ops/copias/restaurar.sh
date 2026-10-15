@@ -1,36 +1,26 @@
 #!/usr/bin/env bash
-# Restores an encrypted Galipau App database backup into a Supabase project.
-# Intended for restore drills on the TEST project and for disaster recovery.
+# Restores a decrypted Galipau App database backup into an EMPTY Supabase project
+# (disaster recovery or restore drill on a test project). Never use it on a
+# database that already contains data.
 #
-# Requirements: age, PostgreSQL 17 client tools (pg_restore, psql), Supabase CLI.
+# Requirements: PostgreSQL client (psql), Node 22+.
+# Before running:
+#   1. Decrypt the backup: node ops/copias/descifrar.mjs --clave key.txt --copia <backup> --destino <folder>
+#   2. In the new project: apply the app migrations (`supabase db push`, or run the
+#      files in supabase/migrations in the SQL editor) and create the owner user.
 # Usage:
-#   ./restaurar.sh <backup.tar.gz.age> <age-identity-file> <target-db-url> <owner-email>
-#
-# Steps:
-#   1. Decrypt and unpack the backup into a private temporary folder.
-#   2. The target project must already have the schema: run `supabase db push`
-#      against it first (same migrations as the app).
-#   3. Load the data only (pg_restore --data-only), in a single transaction.
-#   4. Re-link the owner account (auth users are not part of the backup).
-#   5. Compare the manifest of the restored data with the one in the backup.
+#   ./restaurar.sh <decrypted folder> "<session pooler url>" <owner-email>
 
 set -euo pipefail
 
-if [ "$#" -ne 4 ]; then
-  echo "Usage: $0 <backup.tar.gz.age> <age-identity-file> <target-db-url> <owner-email>" >&2
+if [ "$#" -ne 3 ]; then
+  echo "Usage: $0 <decrypted folder> <target-db-url> <owner-email>" >&2
   exit 1
 fi
 
-COPIA="$1"; IDENTIDAD="$2"; DESTINO="$3"; EMAIL="$4"
+CARPETA="$1"; DESTINO="$2"; EMAIL="$3"
 DIR="$(cd "$(dirname "$0")" && pwd)"
-TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
-umask 077
-
-echo "Decrypting $COPIA..."
-age --decrypt --identity "$IDENTIDAD" --output "$TMP/copia.tar.gz" "$COPIA"
-tar -C "$TMP" -xzf "$TMP/copia.tar.gz"
-test -s "$TMP/galipau.dump" && test -s "$TMP/manifiesto-origen.json"
+for f in datos.sql manifiesto.json; do test -s "$CARPETA/$f" || { echo "Missing $f in $CARPETA" >&2; exit 1; }; done
 
 filas=$(psql "$DESTINO" -qtAX -v ON_ERROR_STOP=1 -c "select (select count(*) from public.propietario) + (select count(*) from public.clientes) + (select count(*) from public.variantes) + (select count(*) from public.presupuestos) + (select count(*) from public.configuracion)")
 if [ "$filas" != "0" ]; then
@@ -38,8 +28,8 @@ if [ "$filas" != "0" ]; then
   exit 1
 fi
 
-echo "Loading data..."
-pg_restore --dbname "$DESTINO" --data-only --single-transaction --exit-on-error --no-owner --no-privileges "$TMP/galipau.dump"
+echo "Loading data (single transaction)..."
+psql "$DESTINO" -q -v ON_ERROR_STOP=1 --single-transaction -f "$CARPETA/datos.sql"
 
 echo "Re-linking the owner account ($EMAIL)..."
 psql "$DESTINO" -q -v ON_ERROR_STOP=1 -v email="$EMAIL" \
@@ -49,11 +39,11 @@ psql "$DESTINO" -qtAX -v ON_ERROR_STOP=1 -v email="$EMAIL" \
   || { echo "Owner account not found: create the user in Supabase Auth first." >&2; exit 1; }
 
 echo "Verifying..."
-psql "$DESTINO" -qtAX -v ON_ERROR_STOP=1 -f "$DIR/manifiesto.sql" > "$TMP/manifiesto-restaurado.json"
+psql "$DESTINO" -qtAX -v ON_ERROR_STOP=1 -f "$DIR/manifiesto.sql" > "$CARPETA/manifiesto-restaurado.json"
 # propietario.user_id was re-linked on purpose, so that table is expected to differ
 node --input-type=module -e "
   import { compararManifiestos, leerManifiesto } from '$DIR/verificar-manifiesto.mjs';
-  const d = compararManifiestos(leerManifiesto('$TMP/manifiesto-origen.json'), leerManifiesto('$TMP/manifiesto-restaurado.json'))
+  const d = compararManifiestos(leerManifiesto('$CARPETA/manifiesto.json'), leerManifiesto('$CARPETA/manifiesto-restaurado.json'))
     .filter((x) => !x.startsWith('propietario:'));
   if (d.length) { console.error('Verification FAILED:'); d.forEach((x) => console.error('  - ' + x)); process.exit(1); }
   console.log('Restore verified: data identical to the backup.');

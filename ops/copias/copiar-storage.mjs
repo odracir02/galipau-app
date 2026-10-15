@@ -5,6 +5,7 @@
 // Usage (in the private backup repository's workflow):
 //   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node copiar-storage.mjs descargar <folder>
 //   node copiar-storage.mjs verificar <folder>
+//   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node copiar-storage.mjs subir <folder>   (emergency restore)
 // The service role key must only ever live in that repository's secrets.
 
 import crypto from "node:crypto";
@@ -76,16 +77,38 @@ export const verificarCarpeta = (destino) => {
   return { manifiesto, errores };
 };
 
+// Emergency: uploads a verified, decrypted folder back into the bucket.
+// Existing objects are never overwritten.
+export const subirCarpeta = async (storage, origen, { bucket = BUCKET } = {}) => {
+  const { manifiesto, errores } = verificarCarpeta(origen);
+  if (errores.length) throw new Error(`Folder does not match its manifest: ${errores.join("; ")}`);
+  const resultado = { subidos: 0, existentes: 0 };
+  for (const a of manifiesto.archivos) {
+    if (!rutaSegura(a.ruta)) throw new Error(`Unsafe object name refused: ${JSON.stringify(a.ruta)}`);
+    const contenido = fs.readFileSync(path.join(origen, "archivos", ...a.ruta.split("/")));
+    const { error } = await storage.from(bucket).upload(a.ruta, contenido, { upsert: false });
+    if (!error) resultado.subidos++;
+    else if (/exists|duplicate/i.test(error.message)) resultado.existentes++;
+    else throw new Error(`Cannot upload "${a.ruta}": ${error.message}`);
+  }
+  return resultado;
+};
+
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const [orden, destino] = process.argv.slice(2);
   try {
-    if (orden === "descargar") {
+    if (orden === "descargar" || orden === "subir") {
       const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = process.env;
       if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required");
       const { createClient } = await import("@supabase/supabase-js");
       const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
-      const m = await descargarTodo(sb.storage, destino);
-      console.log(`Downloaded ${m.total} files (${m.bytes} bytes).`);
+      if (orden === "descargar") {
+        const m = await descargarTodo(sb.storage, destino);
+        console.log(`Downloaded ${m.total} files (${m.bytes} bytes).`);
+      } else {
+        const r = await subirCarpeta(sb.storage, destino);
+        console.log(`Uploaded ${r.subidos} files (${r.existentes} already existed, left untouched).`);
+      }
     } else if (orden === "verificar") {
       const { manifiesto, errores } = verificarCarpeta(destino);
       if (errores.length) {
@@ -95,7 +118,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
       }
       console.log(`Storage backup verified: ${manifiesto.total} files, checksums match.`);
     } else {
-      console.log("Usage: node copiar-storage.mjs descargar|verificar <folder>");
+      console.log("Usage: node copiar-storage.mjs descargar|verificar|subir <folder>");
       process.exit(1);
     }
   } catch (error) {

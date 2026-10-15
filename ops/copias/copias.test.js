@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { crearBd, comoPropietario } from "../../supabase/pruebas/bd.js";
 import { compararManifiestos, leerManifiesto } from "./verificar-manifiesto.mjs";
-import { descargarTodo, verificarCarpeta, listarObjetos, rutaSegura, MANIFIESTO } from "./copiar-storage.mjs";
+import { descargarTodo, verificarCarpeta, listarObjetos, rutaSegura, subirCarpeta, MANIFIESTO } from "./copiar-storage.mjs";
 
 const SQL_MANIFIESTO = fs.readFileSync(new URL("./manifiesto.sql", import.meta.url), "utf8");
 const manifiestoDe = async (db) => {
@@ -96,6 +96,11 @@ const crearStorageFalso = (archivos) => ({
       return { data: [...hijos.values()].sort((a, b) => a.name.localeCompare(b.name)).slice(offset, offset + limit), error: null };
     },
     download: async (ruta) => (ruta in archivos ? { data: new Blob([archivos[ruta]]), error: null } : { data: null, error: { message: "not found" } }),
+    upload: async (ruta, contenido, { upsert }) => {
+      if (ruta in archivos && !upsert) return { data: null, error: { message: "The resource already exists" } };
+      archivos[ruta] = Buffer.from(contenido).toString();
+      return { data: { path: ruta }, error: null };
+    },
   }),
 });
 
@@ -134,5 +139,23 @@ describe("copia de archivos de Storage", () => {
     const m = await descargarTodo(crearStorageFalso({}), dir);
     expect(m.total).toBe(0);
     expect(verificarCarpeta(dir).errores).toEqual([]);
+  });
+
+  it("recuperación de archivos: vuelve a subir una copia verificada a un bucket vacío sin sobrescribir nada", async () => {
+    const dir = carpeta();
+    await descargarTodo(crearStorageFalso({ ...ARCHIVOS }), dir);
+    const vacio = {};
+    expect(await subirCarpeta(crearStorageFalso(vacio), dir)).toEqual({ subidos: 3, existentes: 0 });
+    expect(vacio).toEqual(ARCHIVOS);
+    const conUno = { "logo.png": "VERSION-NUEVA" };
+    expect(await subirCarpeta(crearStorageFalso(conUno), dir)).toEqual({ subidos: 2, existentes: 1 });
+    expect(conUno["logo.png"]).toBe("VERSION-NUEVA");
+  });
+
+  it("no sube una carpeta que no coincide con su manifiesto", async () => {
+    const dir = carpeta();
+    await descargarTodo(crearStorageFalso({ ...ARCHIVOS }), dir);
+    fs.writeFileSync(path.join(dir, "archivos", "logo.png"), "alterado");
+    await expect(subirCarpeta(crearStorageFalso({}), dir)).rejects.toThrow(/does not match/);
   });
 });

@@ -1,12 +1,12 @@
 # Weekly encrypted backup of Supabase Storage files (bucket "archivos").
 # TEMPLATE: copy to .github/workflows/ in the PRIVATE backup repository.
-# Files are kept separately from the database dump because they can be much
-# larger (Free plan: up to 1 GB). Stored as release assets (max 2 GiB each),
-# keeping the last 4 weeks.
+# Kept separately from the database dump because files can be much larger
+# (Free plan: up to 1 GB). Stored as release assets (max 2 GiB each), keeping
+# the last 4 weeks. Refuses to run if the repository is not private.
 #
 # Required configuration in the private repository:
 #   secrets.SUPABASE_URL               https://<project>.supabase.co
-#   secrets.SUPABASE_SERVICE_ROLE_KEY  service role / secret key (never in the app)
+#   secrets.SUPABASE_SERVICE_ROLE_KEY  secret / service role key (never in the app)
 #   vars.AGE_RECIPIENT                 age public key of the owner
 #   vars.APP_REPOSITORY                e.g. odracir02/galipau-app
 
@@ -16,6 +16,9 @@ on:
   schedule:
     - cron: "41 3 * * 0" # Sundays 03:41 UTC
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [".github/workflows/copia-archivos.yml"]
 
 permissions:
   contents: write
@@ -33,12 +36,14 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       AGE_RECIPIENT: ${{ vars.AGE_RECIPIENT }}
+      GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Check configuration
+      - name: Check configuration and repository visibility
         run: |
+          echo "STAMP=$(date -u +%Y%m%dT%H%M%SZ)" >> "$GITHUB_ENV"
+          [ "$(gh api "repos/$GITHUB_REPOSITORY" --jq .private)" = "true" ] || { echo "::error::This repository is not private: backups refused"; exit 1; }
           test -n "$SUPABASE_URL" && test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo "::error::Supabase secrets are not set"; exit 1; }
           echo "$AGE_RECIPIENT" | grep -Eq '^age1[0-9a-z]{58}$' || { echo "::error::Variable AGE_RECIPIENT must be an age public key"; exit 1; }
-          echo "STAMP=$(date -u +%Y%m%dT%H%M%SZ)" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@v4
         with:
@@ -63,21 +68,22 @@ jobs:
 
       - name: Encrypt (plaintext is deleted afterwards)
         run: |
+          set -euo pipefail
           umask 077
           mkdir -p out
-          tar -C work -czf work.tar.gz .
-          age --encrypt --recipient "$AGE_RECIPIENT" --output "out/galipau-archivos-$STAMP.tar.gz.age" work.tar.gz
-          head -c 21 "out/galipau-archivos-$STAMP.tar.gz.age" | grep -q "age-encryption.org/v1"
-          (cd out && sha256sum "galipau-archivos-$STAMP.tar.gz.age" > "galipau-archivos-$STAMP.sha256")
-          echo "SIZE=$(stat -c %s out/galipau-archivos-$STAMP.tar.gz.age)" >> "$GITHUB_ENV"
-          echo "SHA=$(cut -d' ' -f1 out/galipau-archivos-$STAMP.sha256)" >> "$GITHUB_ENV"
           echo "TOTAL=$(node -e "console.log(require('./work/manifiesto-archivos.json').total)")" >> "$GITHUB_ENV"
+          tar -C work -czf work.tar.gz .
+          f="out/galipau-archivos-$STAMP.tar.gz.age"
+          age --encrypt --recipient "$AGE_RECIPIENT" --output "$f" work.tar.gz
+          [ "$(head -c 21 "$f")" = "age-encryption.org/v1" ] || { echo "::error::Output is not age-encrypted"; exit 1; }
+          (cd out && sha256sum "$(basename "$f")" > "galipau-archivos-$STAMP.sha256")
+          echo "SIZE=$(stat -c %s "$f")" >> "$GITHUB_ENV"
+          echo "SHA=$(cut -d' ' -f1 "out/galipau-archivos-$STAMP.sha256")" >> "$GITHUB_ENV"
           rm -rf work work.tar.gz
 
       - name: Store weekly copy (release, keep the last 4)
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           tag="files-$STAMP"
           gh release create "$tag" out/* --title "Storage backup $STAMP" --notes "Encrypted with age. Files: $TOTAL. SHA-256: $SHA"
           gh release list --limit 100 --json tagName,createdAt --jq '[.[] | select(.tagName | startswith("files-"))] | sort_by(.createdAt) | reverse | .[4:] | .[].tagName' \
@@ -87,6 +93,7 @@ jobs:
         if: always()
         run: |
           estado=$([ "${{ job.status }}" = "success" ] && echo correcta || echo fallida)
+          echo "ESTADO=$estado" >> "$GITHUB_ENV"
           node -e '
             const { createClient } = require("./app/ops/copias/node_modules/@supabase/supabase-js");
             const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
@@ -94,13 +101,29 @@ jobs:
               tipo: "archivos", estado: process.argv[1],
               tamano_bytes: Number(process.env.SIZE) || null, sha256: process.env.SHA || null,
               detalle: { archivos: Number(process.env.TOTAL) || 0, ejecucion: process.argv[2] },
-            }).then(({ error }) => { if (error) { console.log("::warning::" + error.message); } });
-          ' "$estado" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            }).then(({ error }) => { if (error) console.log("::warning::" + error.message); });
+          ' "$estado" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" || echo "::warning::Could not record the result"
 
-      - name: Open an issue if the backup failed
-        if: failure()
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Summary
+        if: always()
         run: |
-          gh issue create --title "Storage backup FAILED ($STAMP)" \
+          {
+            echo "### Storage backup: ${ESTADO:-fallida}"
+            echo "| | |"; echo "|---|---|"
+            echo "| Date (UTC) | ${STAMP:-} |"
+            echo "| Files | ${TOTAL:-?} |"
+            echo "| Encrypted size | ${SIZE:-?} bytes |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Alert on failure (opens an issue, emailed by GitHub)
+        if: failure()
+        run: |
+          gh label create copia-fallida --color B60205 --description "Backup failure" 2> /dev/null || true
+          gh issue create --label copia-fallida --title "Storage backup FAILED ($STAMP)" \
             --body "The weekly Storage backup did not complete or could not be verified. Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
+      - name: Close previous Storage alerts after a successful backup
+        if: success()
+        run: |
+          gh issue list --label copia-fallida --state open --search "Storage backup in:title" --json number --jq '.[].number' \
+            | xargs -r -I{} gh issue close {} --comment "Resolved: backup $STAMP completed and verified."

@@ -1,55 +1,74 @@
 # Encrypted backups (GitHub Actions)
 
-Backups run in a **separate private repository**, never in the public app repository. Two scheduled workflows:
+Backups run in a **separate private repository**, never in the public app repository.
 
 | Workflow | What | When | Kept |
 |---|---|---|---|
-| `copia-base-datos.yml` | `public` schema dump (all app data) | Daily, 03:17 UTC | Daily artifact for 30 days. Monthly release for 12 months |
+| `copia-base-datos.yml` | All app data (`public` schema) as `esquema.sql` + `datos.sql` | Daily, 03:17 UTC | Daily artifact for 30 days. Monthly release for 12 months |
 | `copia-archivos.yml` | Files in the Storage bucket `archivos` | Weekly, Sunday 03:41 UTC | Last 4 weekly releases |
 
-A backup is **accepted only after verification**:
-- **Database:** the dump is restored into a temporary PostgreSQL 17 inside the job, and a manifest (row count + checksum of every table) must match the source.
+How a backup is accepted:
+- **Database:** both dumps and a manifest (row count + checksum per table) come from **one consistent snapshot**. The dump is restored into a temporary PostgreSQL 17 in the same run and must match the manifest, with Row Level Security still enabled.
 - **Storage:** every file is checked against the SHA-256 recorded at download time.
 
-Then everything is encrypted with [age](https://age-encryption.org/) to the owner's public key and the plaintext is deleted from the runner. Each run writes its result to `public.registro_copias`, which the app shows. Failures open an issue in the private repository, which sends an email notification.
+Everything is then encrypted with [age](https://age-encryption.org/) to the owner's public key, and the plaintext is deleted from the runner. Each run:
+- writes its result to `public.registro_copias` (shown in the app);
+- writes a summary on the run page;
+- opens an issue labelled `copia-fallida` on failure (GitHub emails it) and closes it after the next successful backup.
 
-The schedule exists for recovery purposes (24 h recovery point). It is not intended to keep the Supabase project active. A paused project must be restored from the Supabase dashboard.
+Both workflows refuse to run if the repository is not private. The schedule exists for recovery purposes (24 h recovery point); it is not intended to keep the Supabase project active.
 
 ## GitHub Free limits (private repository)
 
-- 2,000 Actions minutes per month. Usage is **blocked**, not billed, when no payment method is configured. Expected usage: about 2 min/day plus about 5 min/week.
-- 500 MB artifact storage (shared with Packages). Daily encrypted dumps are small; artifacts expire after 30 days.
-- Release assets: up to 2 GiB per file. The Supabase Free plan allows 1 GB of Storage, so a weekly archive fits.
+- **2,000 Actions minutes per month.** Usage is **blocked**, not billed, without a payment method. Expected: about 3 min/day plus about 3 min/week.
+- **500 MB of artifact storage**, shared with Packages. Encrypted dumps are small and artifacts expire after 30 days. Each backup above 100 MiB fails on purpose.
+- **Release assets:** up to 2 GiB per file. The Supabase Free plan allows 1 GB of Storage.
 
 ## Setup (once)
 
-1. **age key pair** (on your own computer):
+1. **age key pair, on the owner's computer.** On Windows: `winget install FiloSottile.age`, then:
    ```bash
    age-keygen -o galipau-copias.key
    ```
-   - The line `# public key: age1...` is the **public key**.
-   - Keep `galipau-copias.key` (the private key) **outside GitHub**, in two safe places (for example a password manager and a USB drive). Without it, backups cannot be decrypted.
-2. **Private repository** (e.g. `galipau-copias`): create it and copy the two files from `workflows/` into `.github/workflows/`.
-3. **Variables** (Settings → Secrets and variables → Actions → Variables):
+   The `# public key: age1...` line is the public key. Keep the `.key` file (the private key) **outside GitHub**, in two safe places.
+2. **Private repository:** create it with these two workflow files in `.github/workflows/`.
+3. **Variables:**
    - `AGE_RECIPIENT` = the `age1...` public key
    - `APP_REPOSITORY` = `odracir02/galipau-app`
-4. **Secrets** (same page → Secrets):
-   - `SUPABASE_DB_URL`: in Supabase, Connect → *Session pooler* connection string (port 5432, IPv4), with the database password. GitHub runners have no IPv6, so the direct connection string does not work.
-   - `SUPABASE_URL`: `https://<project>.supabase.co`
-   - `SUPABASE_SERVICE_ROLE_KEY`: secret key, used only by the Storage workflow.
-5. **Start with the TEST project** (fictitious data). Run both workflows manually (Actions → Run workflow) and check that they succeed. Then do a restore drill (below). Only then point the secrets to the production project.
+4. **Secrets:**
+   - `SUPABASE_DB_URL`: Supabase → Connect → **Session pooler** string (port 5432, IPv4; GitHub runners have no IPv6)
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY`: secret key, used only by the Storage workflow
+5. **Start with a test project** (fictitious data), run both workflows, and do a restore drill before pointing the secrets to production.
 
-## Restore drill / disaster recovery
+## Restore drill (owner's computer, nothing is written anywhere)
 
-1. Download a backup (artifact or release asset).
-2. Prepare an **empty** Supabase project:
-   - apply the schema: `supabase link --project-ref <ref>` and then `supabase db push`;
-   - create the owner user in Authentication.
-3. Run:
+```bash
+node ops/copias/simulacro.mjs --clave galipau-copias.key --base <db backup .zip or .age> --archivos <files backup .zip or .age>
+```
+
+The drill:
+1. decrypts both backups into a temporary folder;
+2. restores the database into an isolated in-process PostgreSQL, twice:
+   - with the schema from the backup;
+   - with the app migrations plus the data, which is the emergency path;
+3. checks relations, amounts, RLS and constraints;
+4. verifies every file checksum;
+5. deletes all decrypted files.
+
+## Disaster recovery
+
+1. **Decrypt** the latest backup into a new folder:
    ```bash
-   ./restaurar.sh galipau-db-<stamp>.tar.gz.age galipau-copias.key "<session pooler url>" owner@example.com
+   node ops/copias/descifrar.mjs --clave galipau-copias.key --copia <backup> --destino <new folder>
    ```
-   The script decrypts, loads the data in a single transaction, re-links the owner account (authentication users are not part of the backup) and verifies the manifest.
-4. **Storage files:** decrypt the weekly archive, check `manifiesto-archivos.json`, and upload the `archivos/` folder to the bucket.
-
-Repeat the drill every few months: a backup that has never been restored is not a backup.
+2. **Prepare an empty Supabase project:**
+   - apply the app migrations (`supabase db push`, or run `supabase/migrations/*.sql` in the SQL editor);
+   - create the owner user in Authentication.
+3. **Load the data:**
+   ```bash
+   ./restaurar.sh <folder> "<session pooler url>" owner@example.com
+   ```
+   For small databases, you can instead paste `datos.sql` in the SQL editor and then run the owner re-link query documented in the script.
+4. **Files:** decrypt the latest Storage backup, then run `node ops/copias/copiar-storage.mjs subir <folder>` (with `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` set). It verifies checksums first and never overwrites existing objects.
+5. **Clean up:** delete the decrypted folders.
