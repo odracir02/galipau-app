@@ -1,0 +1,138 @@
+# Daily encrypted backup of the Galipau App database.
+# TEMPLATE: copy to .github/workflows/ in the PRIVATE backup repository.
+# A backup is only accepted after it has been restored into a temporary
+# PostgreSQL and its manifest (row counts + checksums per table) matches the
+# source. Plaintext never leaves the runner; only age-encrypted files are stored.
+#
+# Required configuration in the private repository:
+#   secrets.SUPABASE_DB_URL  Session pooler connection string (port 5432)
+#   vars.AGE_RECIPIENT       age public key (age1...) of the owner
+#   vars.APP_REPOSITORY      e.g. odracir02/galipau-app (migrations and tools)
+
+name: Database backup
+
+on:
+  schedule:
+    - cron: "17 3 * * *" # 03:17 UTC every day (recovery point objective: 24 h)
+  workflow_dispatch:
+
+permissions:
+  contents: write # releases (monthly copies)
+  issues: write # failure notification
+
+concurrency:
+  group: galipau-backup-db
+  cancel-in-progress: false
+
+jobs:
+  database:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      AGE_RECIPIENT: ${{ vars.AGE_RECIPIENT }}
+      VERIFY_URL: postgresql://postgres:verify@localhost:5432/verify
+      PGCLIENT: /usr/lib/postgresql/17/bin
+    services:
+      verify:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: verify
+          POSTGRES_DB: verify
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 20
+
+    steps:
+      - name: Check configuration
+        run: |
+          test -n "$SUPABASE_DB_URL" || { echo "::error::Secret SUPABASE_DB_URL is not set"; exit 1; }
+          echo "$AGE_RECIPIENT" | grep -Eq '^age1[0-9a-z]{58}$' || { echo "::error::Variable AGE_RECIPIENT must be an age public key"; exit 1; }
+          echo "STAMP=$(date -u +%Y%m%dT%H%M%SZ)" >> "$GITHUB_ENV"
+
+      - name: Get migrations and verification tools from the app repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.APP_REPOSITORY }}
+          path: app
+          sparse-checkout: |
+            supabase
+            ops/copias
+
+      - name: Install PostgreSQL 17 client and age
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17 age
+
+      - name: Check that the backup role can read all rows (bypasses RLS)
+        run: |
+          bypass=$("$PGCLIENT/psql" "$SUPABASE_DB_URL" -qtAX -c "select rolbypassrls or rolsuper from pg_roles where rolname = current_user")
+          [ "$bypass" = "t" ] || { echo "::error::The connection role cannot bypass RLS: the dump would be incomplete"; exit 1; }
+
+      - name: Dump the public schema and compute the source manifest
+        run: |
+          umask 077
+          mkdir -p work
+          "$PGCLIENT/pg_dump" "$SUPABASE_DB_URL" --schema=public --format=custom --no-owner --no-privileges --file work/galipau.dump
+          "$PGCLIENT/psql" "$SUPABASE_DB_URL" -qtAX -v ON_ERROR_STOP=1 -f app/ops/copias/manifiesto.sql > work/manifiesto-origen.json
+
+      - name: Verify the dump by restoring it into a temporary database
+        run: |
+          "$PGCLIENT/psql" "$VERIFY_URL" -q -v ON_ERROR_STOP=1 -f app/supabase/pruebas/entorno-supabase.sql
+          "$PGCLIENT/pg_restore" --dbname "$VERIFY_URL" --clean --if-exists --single-transaction --exit-on-error --no-owner --no-privileges work/galipau.dump
+          "$PGCLIENT/psql" "$VERIFY_URL" -qtAX -v ON_ERROR_STOP=1 -f app/ops/copias/manifiesto.sql > work/manifiesto-restaurado.json
+          node app/ops/copias/verificar-manifiesto.mjs work/manifiesto-origen.json work/manifiesto-restaurado.json
+
+      - name: Encrypt (plaintext is deleted afterwards)
+        run: |
+          umask 077
+          mkdir -p out
+          tar -C work -czf work/galipau-db.tar.gz galipau.dump manifiesto-origen.json
+          age --encrypt --recipient "$AGE_RECIPIENT" --output "out/galipau-db-$STAMP.tar.gz.age" work/galipau-db.tar.gz
+          test -s "out/galipau-db-$STAMP.tar.gz.age"
+          head -c 21 "out/galipau-db-$STAMP.tar.gz.age" | grep -q "age-encryption.org/v1"
+          (cd out && sha256sum "galipau-db-$STAMP.tar.gz.age" > "galipau-db-$STAMP.sha256")
+          echo "SIZE=$(stat -c %s out/galipau-db-$STAMP.tar.gz.age)" >> "$GITHUB_ENV"
+          echo "SHA=$(cut -d' ' -f1 out/galipau-db-$STAMP.sha256)" >> "$GITHUB_ENV"
+          rm -rf work
+
+      - name: Store daily copy (artifact, 30 days)
+        uses: actions/upload-artifact@v4
+        with:
+          name: galipau-db-${{ env.STAMP }}
+          path: out/
+          retention-days: 30
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Monthly copy (release, keep the last 12)
+        # Runs on the 1st of each month (UTC) and on manual runs; see the check below
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [ "$(date -u +%d)" = "01" ] || [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] || exit 0
+          tag="db-$(date -u +%Y-%m)"
+          gh release view "$tag" > /dev/null 2>&1 && gh release delete "$tag" --yes --cleanup-tag
+          gh release create "$tag" out/* --title "Database backup $(date -u +%Y-%m)" --notes "Encrypted with age. SHA-256: $SHA"
+          gh release list --limit 100 --json tagName,createdAt --jq '[.[] | select(.tagName | startswith("db-"))] | sort_by(.createdAt) | reverse | .[12:] | .[].tagName' \
+            | xargs -r -n1 gh release delete --yes --cleanup-tag
+
+      - name: Record the result in Supabase
+        if: always()
+        run: |
+          estado=$([ "${{ job.status }}" = "success" ] && echo correcta || echo fallida)
+          "$PGCLIENT/psql" "$SUPABASE_DB_URL" -q -v ON_ERROR_STOP=1 \
+            -v estado="$estado" -v tamano="${SIZE:-0}" -v sha="${SHA:-}" -v run="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            -c "insert into public.registro_copias (tipo, estado, tamano_bytes, sha256, detalle) values ('base_datos', :'estado', nullif(:'tamano', '0')::bigint, nullif(:'sha', ''), jsonb_build_object('ejecucion', :'run'))" \
+            || echo "::warning::Could not record the result in Supabase"
+
+      - name: Open an issue if the backup failed
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create --title "Database backup FAILED ($STAMP)" \
+            --body "The daily backup did not complete or could not be verified. Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

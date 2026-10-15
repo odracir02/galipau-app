@@ -2,7 +2,7 @@
 
 > Management application for a screen printing and garment customisation workshop: quote calculator, customers, catalogue and backups — with orders, production, calendar, inventory and profit & loss planned.
 
-Galipau App runs **locally on a Windows PC** for a single owner. It needs no cloud services and has no recurring infrastructure cost. Data is stored in a local SQLite database with automatic, verified backups. Other devices (e.g. a phone) can optionally use it over the local network.
+Galipau App is a single-owner web application. It is moving to a **cloud deployment** (Supabase Free + Cloudflare Pages, no recurring cost) so it can be used from any computer or phone. The original **local mode** (Express + SQLite on a Windows PC) remains available during the migration; see the `v0.4.0-local-sqlite` tag.
 
 ## ✨ Features
 
@@ -13,15 +13,33 @@ Galipau App runs **locally on a Windows PC** for a single owner. It needs no clo
 - Automatic and manual backups using SQLite's online backup API, integrity-checked, with optional off-site copy (e.g. a OneDrive folder) and controlled restore
 - Versioned database migrations with an automatic backup before every schema change
 
+## ☁️ Cloud deployment (Supabase + Cloudflare Pages)
+
+| Part | Service |
+|---|---|
+| Database and authentication | [Supabase](https://supabase.com/) Free (PostgreSQL + Auth) |
+| Web hosting | [Cloudflare Pages](https://pages.cloudflare.com/) (HTTPS) |
+| Backups | GitHub Actions in a separate private repository ([`ops/copias`](ops/copias/README.md)) |
+
+- **Schema:** versioned SQL migrations in `supabase/migrations` (apply with `supabase db push`). Every table uses Row Level Security, so only the registered owner account can read or write. The public (publishable/anon) key shipped to the browser is **not** a security mechanism. Secret keys are rejected at build time and at runtime.
+- **Tests:** `supabase/pruebas` runs the real migrations on an in-process PostgreSQL ([PGlite](https://pglite.dev/)) and checks constraints and authorised/unauthorised access, with no cloud project or Docker needed.
+- **Cloudflare Pages settings:**
+  - build command `npm run build`, output directory `dist`, Node version from `.nvmrc`;
+  - environment variables `VITE_BACKEND=supabase`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`;
+  - use a test Supabase project for preview deployments and the production project for production;
+  - React Router routes are served by the Pages single-page-application fallback;
+  - security headers are defined in `public/_headers`.
+- **Sample data:** `supabase/datos-ficticios.sql` contains fictitious data for the test project only. It refuses to run on a database marked as production.
+
 ## 🛠️ Built With
 
 - [React](https://react.dev/) + [Vite](https://vitejs.dev/) + [Bootstrap](https://getbootstrap.com/)
-- [Express](https://expressjs.com/) (local API server)
-- [SQLite](https://sqlite.org/) via [better-sqlite3](https://github.com/WiseLibs/better-sqlite3)
+- [Supabase](https://supabase.com/) (PostgreSQL, Auth, Storage)
+- [Express](https://expressjs.com/) + [SQLite](https://sqlite.org/) via [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) (local mode)
 - [Vitest](https://vitest.dev/) + [Testing Library](https://testing-library.com/)
 - Firebase/Firestore: legacy catalogue source, kept only until the catalogue is migrated
 
-## 🚀 Getting started (Windows)
+## 🖥️ Local mode (Windows)
 
 Requirements: [Node.js](https://nodejs.org/) 22.9 or newer, and Git.
 
@@ -90,7 +108,9 @@ Set `VITE_CATALOGO_FUENTE=local` in `.env` to make the quote form read the catal
 ## 📁 Project structure
 
 ```
-src/        React UI (app shell, session, pages, domain logic shared with the server)
-server/     Express API, SQLite access, migrations, backups, authentication
-scripts/    Windows launcher
+src/        React UI (app shell, session, pages, domain logic)
+supabase/   PostgreSQL migrations, RLS policies, fictitious test data and database tests
+ops/        Backup workflows and restore tooling (for a private repository)
+server/     Local mode: Express API, SQLite, migrations, backups, authentication
+scripts/    Local mode: Windows launcher
 ```
