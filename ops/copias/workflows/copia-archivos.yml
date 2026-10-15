@@ -37,6 +37,7 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       AGE_RECIPIENT: ${{ vars.AGE_RECIPIENT }}
       GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }} # gh cannot infer it: the workspace is not this repository
     steps:
       - name: Check configuration and repository visibility
         run: |

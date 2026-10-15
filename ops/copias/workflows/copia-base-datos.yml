@@ -41,6 +41,7 @@ jobs:
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
       AGE_RECIPIENT: ${{ vars.AGE_RECIPIENT }}
       GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }} # gh cannot infer it: the workspace is not this repository
       PGBIN: /usr/lib/postgresql/17/bin
       VERIFY_URL: postgresql://postgres:verify@localhost:5432/verify
     services:
