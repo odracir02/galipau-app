@@ -55,3 +55,7 @@ CLAUDE.local.md
 *.sqlite
 *.sqlite3
 *.parcial
+
+# Local reference files (business spreadsheets, never published)
+/Referencias/
+/referencias/
