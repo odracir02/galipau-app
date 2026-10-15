@@ -22,3 +22,23 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+serviceAccountKey*.json
+*-firebase-adminsdk-*.json
+
+# Local development assistant configuration
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+
+# Local reference spreadsheets
+*.xlsx
+*.xls
+*.xlsm
+~$*

@@ -1,19 +1,21 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
+import {
+  leerHistorial,
+  guardarHistorial,
+  eliminarPresupuesto as quitarDeLista,
+  formatearPresupuesto,
+} from "../domain/historialPresupuestos";
 
 function BudgetHistory() {
-  const [presupuestos, setPresupuestos] = useState([]);
-
-  useEffect(() => {
-    const data = JSON.parse(localStorage.getItem("historialPresupuestos")) || [];
-    setPresupuestos(data);
-  }, []);
+  const [presupuestos, setPresupuestos] = useState(() =>
+    leerHistorial(globalThis.localStorage)
+  );
 
   const eliminarPresupuesto = (index) => {
-    const actualizados = [...presupuestos];
-    actualizados.splice(index, 1);
+    const actualizados = quitarDeLista(presupuestos, index);
     setPresupuestos(actualizados);
-    localStorage.setItem("historialPresupuestos", JSON.stringify(actualizados));
+    guardarHistorial(localStorage, actualizados);
   };
 
   return (
@@ -34,20 +36,23 @@ function BudgetHistory() {
             </tr>
           </thead>
           <tbody>
-            {presupuestos.map((p, idx) => (
-              <tr key={idx}>
-                <td>{p.clientName}</td>
-                <td>{p.printType}</td>
-                <td>{p.totalQuantity}</td>
-                <td>{p.totalPresupuesto.toFixed(2)} €</td>
-                <td>{new Date(p.fecha).toLocaleString()}</td>
-                <td>
-                  <button className="btn btn-danger btn-sm" onClick={() => eliminarPresupuesto(idx)}>
-                    Borrar
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {presupuestos.map((registro, idx) => {
+              const p = formatearPresupuesto(registro);
+              return (
+                <tr key={idx}>
+                  <td>{p.cliente}</td>
+                  <td>{p.tecnicas}</td>
+                  <td>{p.prendas}</td>
+                  <td>{p.total}</td>
+                  <td>{p.fecha}</td>
+                  <td>
+                    <button className="btn btn-danger btn-sm" onClick={() => eliminarPresupuesto(idx)}>
+                      Borrar
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}
