@@ -19,9 +19,13 @@ export const listarMigraciones = () =>
 export const PROPIETARIO = "11111111-1111-1111-1111-111111111111";
 export const INTRUSO = "22222222-2222-2222-2222-222222222222";
 
-export const crearBd = async ({ conPropietario = true } = {}) => {
+// privilegiosPorDefecto=false simulates a project created with
+// "Automatically expose new tables" disabled (no default grants in public).
+export const crearBd = async ({ conPropietario = true, privilegiosPorDefecto = true } = {}) => {
   const db = await PGlite.create();
-  await db.exec(fs.readFileSync(path.join(RAIZ, "pruebas", "entorno-supabase.sql"), "utf8"));
+  let entorno = fs.readFileSync(path.join(RAIZ, "pruebas", "entorno-supabase.sql"), "utf8");
+  if (!privilegiosPorDefecto) entorno = entorno.replace(/^alter default privileges in schema public grant .*$/gm, "");
+  await db.exec(entorno);
   for (const archivo of listarMigraciones()) {
     await db.exec(fs.readFileSync(path.join(CARPETA_MIGRACIONES, archivo), "utf8"));
   }

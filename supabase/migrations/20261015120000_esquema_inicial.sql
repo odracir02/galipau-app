@@ -230,8 +230,23 @@ create policy registro_copias_lectura on public.registro_copias
   for select to authenticated using (public.es_propietario());
 
 -- ---------------------------------------------------------------------------
--- Privileges: nothing for anonymous visitors (defence in depth on top of RLS)
+-- Privileges. Granted explicitly, so the schema works whether or not the
+-- project exposes new tables to the Data API automatically. Row Level
+-- Security above still restricts every row to the owner.
 -- ---------------------------------------------------------------------------
+grant usage on schema public to authenticated, service_role;
+grant select, insert, update, delete on
+  public.configuracion, public.contadores, public.clientes, public.proveedores,
+  public.modelos, public.variantes, public.presupuestos
+  to authenticated;
+grant select on public.propietario, public.registro_copias, public.v_catalogo_plano to authenticated;
+grant usage, select on all sequences in schema public to authenticated;
+-- service_role (secret key) is only used by the backup jobs
+grant select on all tables in schema public to service_role;
+grant insert on public.registro_copias to service_role;
+grant usage, select on all sequences in schema public to service_role;
+
+-- Nothing for anonymous visitors (defence in depth on top of RLS)
 revoke all on all tables in schema public from anon;
 revoke all on all sequences in schema public from anon;
 revoke execute on all functions in schema public from anon, public;
