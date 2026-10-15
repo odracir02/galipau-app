@@ -3,6 +3,7 @@ import QuoteForm from "./components/QuoteForm";
 import BudgetHistory from "./components/BudgetHistory";
 import ProveedorSesion from "./app/sesion/ProveedorSesion";
 import BarraNavegacion from "./app/BarraNavegacion";
+import PiePagina from "./app/PiePagina";
 import PaginaCopias from "./modules/copias/PaginaCopias";
 import PaginaCopiasNube from "./modules/copias/PaginaCopiasNube";
 import { backendActivo } from "./app/backend";
@@ -13,11 +14,14 @@ function App({ servicioSesion }) {
     <Router>
       <ProveedorSesion servicio={servicioSesion}>
         <BarraNavegacion />
-        <Routes>
-          <Route path="/" element={<QuoteForm />} />
-          <Route path="/historial" element={<BudgetHistory />} />
-          <Route path="/copias" element={nube ? <PaginaCopiasNube /> : <PaginaCopias />} />
-        </Routes>
+        <main className="pb-5">
+          <Routes>
+            <Route path="/" element={<QuoteForm />} />
+            <Route path="/historial" element={<BudgetHistory />} />
+            <Route path="/copias" element={nube ? <PaginaCopiasNube /> : <PaginaCopias />} />
+          </Routes>
+        </main>
+        <PiePagina />
       </ProveedorSesion>
     </Router>
   );

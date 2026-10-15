@@ -40,6 +40,7 @@ describe("App en la nube — acceso", () => {
     await user.type(screen.getByLabelText("Contraseña"), PROPIETARIO.password);
     await user.click(screen.getByRole("button", { name: "Entrar" }));
     expect(await screen.findByRole("heading", { name: "Generar presupuesto" })).toBeTruthy();
+    expect(screen.getByRole("contentinfo").textContent).toBe("Galipau Arts · Galipau App");
   });
 
   it("una cuenta que no es la propietaria no accede", async () => {
