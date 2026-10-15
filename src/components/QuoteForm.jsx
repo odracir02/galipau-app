@@ -1,223 +1,134 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import BloquePresupuesto from "./BloquePresupuesto";
 import { getProductos } from "../services/getProductos";
+import {
+  crearBloque,
+  actualizarBloque,
+  actualizarLinea,
+  agregarLinea,
+  eliminarLinea,
+  agregarBloque,
+  eliminarBloque,
+} from "../domain/presupuestoEstado";
+import { validarPresupuesto } from "../domain/validacion";
+import { calcularPresupuesto } from "../domain/calculo";
+import { agregarAlHistorial } from "../domain/historialPresupuestos";
+
+const MENSAJES_AVISO = {
+  productoNoEncontrado: "producto no encontrado en el catálogo; se ha calculado sin coste de prenda.",
+  costesDistintos:
+    "el catálogo tiene varios colores con costes distintos para esta selección; se ha usado el primero.",
+};
+
+const MENSAJES_GUARDADO = {
+  historialIlegible:
+    "No se ha podido guardar: el historial almacenado en este navegador está dañado. No se ha modificado.",
+  errorAlmacenamiento: "No se ha podido guardar el presupuesto en este navegador.",
+};
 
 function QuoteForm() {
   const [clientName, setClientName] = useState("");
+  const [bloques, setBloques] = useState(() => [crearBloque()]);
+
   const [productos, setProductos] = useState([]);
-  const [bloques, setBloques] = useState([
-    {
-      id: Date.now(),
-      estampado: "DTF",
-      area: null,
-      numColores: null,
-      zonas: 1,
-      lineas: [
-        {
-          tipo: "Camiseta",
-          proveedor: "",
-          modelo: "",
-          color: "",
-          size: "",
-          quantity: "",
-        },
-      ],
-    },
-  ]);
+  const [estadoCatalogo, setEstadoCatalogo] = useState("cargando");
 
-  const [quoteResult, setQuoteResult] = useState(null);
+  const [errores, setErrores] = useState([]);
+  const [calculo, setCalculo] = useState(null);
+  const [desactualizado, setDesactualizado] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [errorGuardado, setErrorGuardado] = useState(null);
 
-  useEffect(() => {
-    const fetchProductos = async () => {
+  const cargarProductos = useCallback(async () => {
+    setEstadoCatalogo("cargando");
+    try {
       const data = await getProductos();
       setProductos(data);
-    };
-    fetchProductos();
+      setEstadoCatalogo(data.length > 0 ? "listo" : "vacio");
+    } catch (e) {
+      console.error("Error loading products", e);
+      setProductos([]);
+      setEstadoCatalogo("error");
+    }
   }, []);
 
-  const handleChangeBloque = (index, field, value) => {
-    const copia = [...bloques];
-    copia[index][field] = value;
-    setBloques(copia);
+  useEffect(() => {
+    cargarProductos();
+  }, [cargarProductos]);
+
+  // Any change to the form makes a previous result outdated.
+  const modificar = (actualizar) => {
+    setBloques(actualizar);
+    if (calculo) setDesactualizado(true);
   };
 
-  const handleChangeLinea = (bloqueIndex, lineaIndex, field, value) => {
-    const copia = [...bloques];
-    copia[bloqueIndex].lineas[lineaIndex][field] = value;
-    setBloques(copia);
-  };
-
-  const addLinea = (bloqueIndex) => {
-    const copia = [...bloques];
-    copia[bloqueIndex].lineas.push({
-      tipo: "Camiseta",
-      proveedor: "",
-      modelo: "",
-      color: "",
-      size: "",
-      quantity: "",
-    });
-    setBloques(copia);
-  };
-
-  const addBloque = () => {
-    setBloques([
-      ...bloques,
-      {
-        id: Date.now(),
-        estampado: "DTF",
-        area: null,
-        numColores: null,
-        zonas: 1,
-        lineas: [
-          {
-            tipo: "Camiseta",
-            proveedor: "",
-            modelo: "",
-            color: "",
-            size: "",
-            quantity: "",
-          },
-        ],
-      },
-    ]);
+  const handleClientName = (valor) => {
+    setClientName(valor);
+    if (calculo) setDesactualizado(true);
   };
 
   const handleCalcularPresupuesto = () => {
-    const costePorCm2 = (9 / 5500) * 1.21;
-    const precioBastidor = 25;
-    const precioManoObra = 1.5;
+    const encontrados = validarPresupuesto({ clientName, bloques, productos });
+    setErrores(encontrados);
+    if (encontrados.length > 0) return;
 
-    const todasLasLineas = bloques.flatMap((bloque) =>
-      bloque.lineas.map((linea) => ({
-        ...linea,
-        estampado: bloque.estampado,
-        area: bloque.area,
-        zonas: bloque.zonas || 1,
-        numColores: bloque.numColores,
-      }))
-    );
-
-    let totalPrendas = 0;
-    let subtotalSinDescuento = 0;
-    let beneficioTotal = 0;
-
-    const lineasConPrecio = todasLasLineas.map((linea) => {
-      const unidades = parseInt(linea.quantity);
-      const zonas = parseInt(linea.zonas) || 1;
-      totalPrendas += unidades;
-
-      const producto = productos.find(
-        (p) =>
-          p.tipo === linea.tipo &&
-          p.proveedor === linea.proveedor &&
-          p.modelo === linea.modelo &&
-          p.talla === linea.size &&
-          ((linea.color.toLowerCase() === "blanco" &&
-            p.color.toLowerCase().includes("blanco")) ||
-            (linea.color.toLowerCase() === "color" &&
-              !p.color.toLowerCase().includes("blanco")))
-      );
-
-      const costePrenda = producto ? parseFloat(producto.coste || 0) : 0;
-
-      let precioUnitario = 0;
-      let subtotal = 0;
-      let beneficioLinea = 0;
-
-      if (linea.estampado === "DTF") {
-        const costeFilm = (linea.area || 0) * costePorCm2;
-        const costeClienteFilm = costeFilm * 2;
-        const filmPorUnidad = costeClienteFilm / unidades;
-        const manoObraUnidad = zonas * precioManoObra;
-        const beneficioFilmTotal = costeClienteFilm - costeFilm;
-        const beneficioManoObra = unidades * zonas * precioManoObra;
-        precioUnitario = costePrenda + filmPorUnidad + manoObraUnidad;
-        const beneficioPrenda =
-          precioUnitario - filmPorUnidad - manoObraUnidad - costePrenda;
-        beneficioLinea =
-          beneficioPrenda * unidades + beneficioFilmTotal + beneficioManoObra;
-      }
-
-      if (linea.estampado === "Serigrafía") {
-        const costeBastidorTotal = zonas * precioBastidor;
-        const costeManoObraTotal = zonas * unidades * precioManoObra;
-        const totalBloque = costeBastidorTotal + costeManoObraTotal;
-        const extraPorUnidad = totalBloque / unidades;
-        precioUnitario = costePrenda + extraPorUnidad;
-        const beneficioPrenda = precioUnitario - extraPorUnidad - costePrenda;
-        const beneficioManoObra = unidades * zonas * precioManoObra;
-        const beneficioBastidor = zonas * precioBastidor;
-        beneficioLinea =
-          beneficioPrenda * unidades + beneficioManoObra + beneficioBastidor;
-      }
-
-      subtotal = precioUnitario * unidades;
-      subtotalSinDescuento += subtotal;
-      beneficioTotal += beneficioLinea;
-
-      return {
-        ...linea,
-        precioUnitario,
-        subtotal,
-        beneficioLinea,
-      };
-    });
-
-    let descuentoPorcentaje = 0;
-    if (totalPrendas >= 50) descuentoPorcentaje = 15;
-    else if (totalPrendas >= 20) descuentoPorcentaje = 10;
-    else if (totalPrendas >= 10) descuentoPorcentaje = 5;
-
-    const descuento = (subtotalSinDescuento * descuentoPorcentaje) / 100;
-    const total = subtotalSinDescuento - descuento;
-
-    setQuoteResult({
-      clientName,
-      totalPrendas,
-      lineas: lineasConPrecio,
-      subtotalSinDescuento,
-      descuentoPorcentaje,
-      descuento,
-      total,
-      beneficioTotal,
-    });
-
+    setCalculo(calcularPresupuesto({ clientName, bloques, productos }));
+    setDesactualizado(false);
     setSaved(false);
+    setErrorGuardado(null);
   };
 
   const handleGuardarPresupuesto = () => {
-    if (!quoteResult || saved) return;
-
-    const historial =
-      JSON.parse(localStorage.getItem("historialPresupuestos")) || [];
-    const nuevo = { ...quoteResult, fecha: new Date().toISOString() };
-    localStorage.setItem(
-      "historialPresupuestos",
-      JSON.stringify([...historial, nuevo])
-    );
-    setSaved(true);
+    if (!calculo || saved || desactualizado) return;
+    const nuevo = { ...calculo.resultado, fecha: new Date().toISOString() };
+    const respuesta = agregarAlHistorial(localStorage, nuevo);
+    if (respuesta.ok) {
+      setSaved(true);
+      setErrorGuardado(null);
+    } else {
+      setErrorGuardado(MENSAJES_GUARDADO[respuesta.motivo]);
+    }
   };
+
+  const erroresDe = (bloqueId) => errores.filter((e) => e.bloqueId === bloqueId);
+  const quoteResult = calculo?.resultado;
+  const avisos = calculo?.avisos ?? [];
 
   return (
     <div className="container mt-5">
       <h2 className="mb-4">Generar presupuesto</h2>
 
+      {estadoCatalogo === "cargando" && (
+        <div className="alert alert-info" role="status">Cargando catálogo de productos…</div>
+      )}
+      {estadoCatalogo === "error" && (
+        <div className="alert alert-danger d-flex align-items-center gap-3" role="alert">
+          <span>No se ha podido cargar el catálogo de productos. Comprueba la conexión.</span>
+          <button type="button" className="btn btn-sm btn-outline-danger" onClick={cargarProductos}>
+            Reintentar
+          </button>
+        </div>
+      )}
+      {estadoCatalogo === "vacio" && (
+        <div className="alert alert-warning" role="alert">El catálogo de productos está vacío.</div>
+      )}
+
       <form
+        noValidate
         onSubmit={(e) => {
           e.preventDefault();
           handleCalcularPresupuesto();
         }}
       >
         <div className="mb-3">
-          <label className="form-label">Nombre del cliente</label>
+          <label className="form-label" htmlFor="clientName">Nombre del cliente</label>
           <input
+            id="clientName"
             type="text"
-            className="form-control"
+            className={`form-control ${errores.some((e) => e.campo === "clientName") ? "is-invalid" : ""}`}
             value={clientName}
-            onChange={(e) => setClientName(e.target.value)}
+            onChange={(e) => handleClientName(e.target.value)}
             required
           />
         </div>
@@ -227,14 +138,31 @@ function QuoteForm() {
             key={bloque.id}
             bloque={bloque}
             index={i}
-            onBloqueChange={handleChangeBloque}
-            onLineaChange={handleChangeLinea}
-            onAddLinea={addLinea}
             productos={productos}
+            errores={erroresDe(bloque.id)}
+            puedeEliminar={bloques.length > 1}
+            onBloqueChange={(campo, valor) => modificar((bs) => actualizarBloque(bs, bloque.id, campo, valor))}
+            onLineaChange={(lineaId, campo, valor) =>
+              modificar((bs) => actualizarLinea(bs, bloque.id, lineaId, campo, valor))
+            }
+            onAddLinea={() => modificar((bs) => agregarLinea(bs, bloque.id))}
+            onRemoveLinea={(lineaId) => modificar((bs) => eliminarLinea(bs, bloque.id, lineaId))}
+            onRemoveBloque={() => modificar((bs) => eliminarBloque(bs, bloque.id))}
           />
         ))}
 
-        <button className="btn btn-primary mt-3" type="button" onClick={addBloque}>
+        {errores.length > 0 && (
+          <div className="alert alert-danger" role="alert">
+            <strong>Revisa los siguientes datos:</strong>
+            <ul className="mb-0">
+              {errores.map((e, i) => (
+                <li key={i}>{e.mensaje}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <button className="btn btn-primary mt-3" type="button" onClick={() => modificar(agregarBloque)}>
           + Añadir bloque
         </button>
 
@@ -250,41 +178,62 @@ function QuoteForm() {
       {quoteResult && (
         <div className="mt-5">
           <h4>Resumen del presupuesto</h4>
+
+          {desactualizado && (
+            <div className="alert alert-warning" role="alert">
+              Has modificado los datos después de calcular. Vuelve a calcular el presupuesto antes de guardarlo.
+            </div>
+          )}
+
+          {avisos.length > 0 && (
+            <div className="alert alert-warning" role="alert">
+              <ul className="mb-0">
+                {avisos.map((a) => (
+                  <li key={`${a.lineaId}-${a.tipo}`}>
+                    Tipo {a.bloque}, línea {a.linea}: {MENSAJES_AVISO[a.tipo]}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <p><strong>Cliente:</strong> {quoteResult.clientName}</p>
           <p><strong>Total de prendas:</strong> {quoteResult.totalPrendas}</p>
 
-          <table className="table table-bordered">
-            <thead>
-              <tr>
-                <th>Tipo</th>
-                <th>Proveedor</th>
-                <th>Modelo</th>
-                <th>Color</th>
-                <th>Talla</th>
-                <th>Cantidad</th>
-                <th>Estampado</th>
-                <th>€/unidad</th>
-                <th>Subtotal</th>
-                <th>Beneficio</th>
-              </tr>
-            </thead>
-            <tbody>
-              {quoteResult.lineas.map((l, i) => (
-                <tr key={i}>
-                  <td>{l.tipo}</td>
-                  <td>{l.proveedor}</td>
-                  <td>{l.modelo}</td>
-                  <td>{l.color}</td>
-                  <td>{l.size}</td>
-                  <td>{l.quantity}</td>
-                  <td>{l.estampado}</td>
-                  <td>{l.precioUnitario.toFixed(2)} €</td>
-                  <td>{l.subtotal.toFixed(2)} €</td>
-                  <td>{l.beneficioLinea.toFixed(2)} €</td>
+          <div className="table-responsive">
+            <table className="table table-bordered">
+              <thead>
+                <tr>
+                  <th>Tipo</th>
+                  <th>Proveedor</th>
+                  <th>Modelo</th>
+                  <th>Color</th>
+                  <th>Talla</th>
+                  <th>Cantidad</th>
+                  <th>Estampado</th>
+                  <th>€/unidad</th>
+                  <th>Subtotal</th>
+                  <th>Beneficio</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {quoteResult.lineas.map((l, i) => (
+                  <tr key={i}>
+                    <td>{l.tipo}</td>
+                    <td>{l.proveedor}</td>
+                    <td>{l.modelo}</td>
+                    <td>{l.color}</td>
+                    <td>{l.size}</td>
+                    <td>{l.quantity}</td>
+                    <td>{l.estampado}</td>
+                    <td>{l.precioUnitario.toFixed(2)} €</td>
+                    <td>{l.subtotal.toFixed(2)} €</td>
+                    <td>{l.beneficioLinea.toFixed(2)} €</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
           <h5>
             Subtotal sin descuento: {quoteResult.subtotalSinDescuento.toFixed(2)} €
@@ -300,10 +249,15 @@ function QuoteForm() {
             Beneficio estimado: {quoteResult.beneficioTotal.toFixed(2)} €
           </h5>
 
+          {errorGuardado && (
+            <div className="alert alert-danger" role="alert">{errorGuardado}</div>
+          )}
+
           <button
+            type="button"
             className="btn btn-success"
             onClick={handleGuardarPresupuesto}
-            disabled={saved}
+            disabled={saved || desactualizado}
           >
             {saved ? "Presupuesto guardado" : "Guardar presupuesto"}
           </button>

@@ -1,13 +1,20 @@
-function SerigrafiaFormFields({ numColores, onChange }) {
+import { useId } from "react";
+
+function SerigrafiaFormFields({ numColores, invalido, onChange }) {
+  const id = useId();
   return (
     <div className="mt-2">
-      <label className="form-label">N.º de colores</label>
+      <label className="form-label" htmlFor={id}>N.º de colores</label>
       <input
+        id={id}
         type="number"
-        className="form-control"
+        className={`form-control ${invalido ? "is-invalid" : ""}`}
         placeholder="Ej: 2"
-        value={numColores || ""}
-        onChange={(e) => onChange(Number(e.target.value))}
+        min="1"
+        step="1"
+        inputMode="numeric"
+        value={numColores ?? ""}
+        onChange={(e) => onChange(e.target.value)}
         required
       />
     </div>

@@ -68,6 +68,25 @@ export const leerHistorial = (storage) => {
   }
 };
 
+// Appends a quote to the history. Unlike leerHistorial, it refuses to write if
+// the stored content cannot be read as a list, so unreadable data is never
+// overwritten. Returns { ok: true } or { ok: false, motivo }.
+export const agregarAlHistorial = (storage, registro) => {
+  try {
+    const crudo = storage.getItem(CLAVE_HISTORIAL);
+    let lista = [];
+    if (crudo) {
+      const datos = JSON.parse(crudo);
+      if (!Array.isArray(datos)) return { ok: false, motivo: "historialIlegible" };
+      lista = datos;
+    }
+    storage.setItem(CLAVE_HISTORIAL, JSON.stringify([...lista, registro]));
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, motivo: e instanceof SyntaxError ? "historialIlegible" : "errorAlmacenamiento" };
+  }
+};
+
 export const guardarHistorial = (storage, presupuestos) => {
   storage.setItem(CLAVE_HISTORIAL, JSON.stringify(presupuestos));
 };

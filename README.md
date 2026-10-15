@@ -19,7 +19,7 @@
 - [Bootstrap](https://getbootstrap.com/) (for layout and styling)
 - [Firebase (Firestore)](https://firebase.google.com/)
 - [Git + GitHub](https://github.com/odracir02/galipau-app)
-- [XLSX](https://www.npmjs.com/package/xlsx)
+- [Vitest](https://vitest.dev/) + [Testing Library](https://testing-library.com/) (automated tests)
 
 ## 📦 Setup
 
@@ -28,3 +28,12 @@ git clone https://github.com/odracir02/galipau-app.git
 cd galipau-app
 npm install
 npm run dev
+```
+
+## 🧪 Quality checks
+
+```bash
+npm test        # unit and UI tests
+npm run lint
+npm run build
+```

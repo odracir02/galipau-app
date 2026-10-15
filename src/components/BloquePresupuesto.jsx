@@ -1,61 +1,57 @@
+import { useId } from "react";
 import DTFFormFields from "./DTFFormFields";
 import SerigrafiaFormFields from "./SerigrafiaFormFields";
 import LineaProducto from "./LineaProducto";
+import { opcionesLinea } from "../domain/catalogo";
 
 function BloquePresupuesto({
   bloque,
   index,
+  productos,
+  errores = [],
+  puedeEliminar,
   onBloqueChange,
   onLineaChange,
   onAddLinea,
-  productos,
+  onRemoveLinea,
+  onRemoveBloque,
 }) {
-  const normalize = (str) =>
-    str?.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
-
-  const normalizeColor = (color) => {
-    const c = normalize(color);
-    if (c === "blanca" || c === "blanco") return "Blanca";
-    return "Color";
-  };
-
-  const handleBloqueFieldChange = (field, value) => {
-    onBloqueChange(index, field, value);
-  };
-
-  const handleLineaFieldChange = (lineaIndex, field, value) => {
-    onLineaChange(index, lineaIndex, field, value);
-  };
-
-  const handleAddLinea = () => {
-    onAddLinea(index);
-  };
-
-  const tallaOrden = ["Niño", "S", "M", "L", "XL", "2XL", "3XL"];
+  const id = useId();
+  const tieneError = (campo) => errores.some((e) => !e.lineaId && e.campo === campo);
+  const camposConError = (lineaId) =>
+    errores.filter((e) => e.lineaId === lineaId).map((e) => e.campo);
 
   return (
-    <div className="border rounded p-3 mb-4 bg-light">
-      <h5>Tipo {index + 1}</h5>
+    <section className="border rounded p-3 mb-4 bg-light" aria-label={`Tipo ${index + 1}`}>
+      <div className="d-flex justify-content-between align-items-center">
+        <h5>Tipo {index + 1}</h5>
+        {puedeEliminar && (
+          <button type="button" className="btn btn-sm btn-outline-danger" onClick={onRemoveBloque}>
+            Eliminar bloque
+          </button>
+        )}
+      </div>
 
       <div className="mb-3">
-        <label className="form-label">Tipo de estampado</label>
+        <label className="form-label" htmlFor={`${id}-estampado`}>Tipo de estampado</label>
         <select
+          id={`${id}-estampado`}
           className="form-select w-auto"
           value={bloque.estampado}
-          onChange={(e) => handleBloqueFieldChange("estampado", e.target.value)}
+          onChange={(e) => onBloqueChange("estampado", e.target.value)}
         >
           <option value="DTF">DTF</option>
           <option value="Serigrafía">Serigrafía</option>
         </select>
       </div>
 
-      {/* Nueva sección: Número de zonas */}
       <div className="mb-3">
-        <label className="form-label">Número de zonas estampadas</label>
+        <label className="form-label" htmlFor={`${id}-zonas`}>Número de zonas estampadas</label>
         <select
+          id={`${id}-zonas`}
           className="form-select w-auto"
           value={bloque.zonas || 1}
-          onChange={(e) => handleBloqueFieldChange("zonas", parseInt(e.target.value))}
+          onChange={(e) => onBloqueChange("zonas", parseInt(e.target.value))}
         >
           <option value={1}>1 zona (ej. frontal)</option>
           <option value={2}>2 zonas (frontal + espalda)</option>
@@ -66,73 +62,38 @@ function BloquePresupuesto({
       {bloque.estampado === "DTF" && (
         <DTFFormFields
           area={bloque.area}
-          onChange={(val) => handleBloqueFieldChange("area", val)}
+          invalido={tieneError("area")}
+          onChange={(val) => onBloqueChange("area", val)}
         />
       )}
 
       {bloque.estampado === "Serigrafía" && (
         <SerigrafiaFormFields
           numColores={bloque.numColores}
-          onChange={(val) => handleBloqueFieldChange("numColores", val)}
+          invalido={tieneError("numColores")}
+          onChange={(val) => onBloqueChange("numColores", val)}
         />
       )}
 
       <div className="mt-3">
-        {bloque.lineas.map((linea, lineaIndex) => {
-          const tipo = linea.tipo;
-          const proveedor = linea.proveedor;
-          const modelo = linea.modelo;
-          const talla = linea.size;
+        {bloque.lineas.map((linea, lineaIndex) => (
+          <LineaProducto
+            key={linea.id}
+            linea={linea}
+            numero={lineaIndex + 1}
+            opciones={opcionesLinea(productos, linea)}
+            camposConError={camposConError(linea.id)}
+            puedeEliminar={bloque.lineas.length > 1}
+            onChange={(campo, val) => onLineaChange(linea.id, campo, val)}
+            onRemove={() => onRemoveLinea(linea.id)}
+          />
+        ))}
 
-          const proveedores = [
-            ...new Set(productos.filter(p => p.tipo === tipo).map(p => p.proveedor)),
-          ];
-
-          const modelos = [
-            ...new Set(productos
-              .filter(p => p.tipo === tipo && p.proveedor === proveedor)
-              .map(p => p.modelo)),
-          ];
-
-          const tallas = [
-            ...new Set(productos
-              .filter(p =>
-                p.tipo === tipo &&
-                p.proveedor === proveedor &&
-                p.modelo === modelo
-              )
-              .map(p => p.talla)),
-          ].sort((a, b) => tallaOrden.indexOf(a) - tallaOrden.indexOf(b));
-
-          const colores = [
-            ...new Set(productos
-              .filter(p =>
-                p.tipo === tipo &&
-                p.proveedor === proveedor &&
-                p.modelo === modelo &&
-                p.talla === talla
-              )
-              .map(p => normalizeColor(p.color))),
-          ];
-
-          return (
-            <LineaProducto
-              key={lineaIndex}
-              linea={linea}
-              onChange={(field, val) => handleLineaFieldChange(lineaIndex, field, val)}
-              proveedores={proveedores}
-              modelos={modelos}
-              tallas={tallas}
-              colores={colores}
-            />
-          );
-        })}
-
-        <button className="btn btn-outline-secondary mt-2" onClick={handleAddLinea}>
+        <button type="button" className="btn btn-outline-secondary mt-2" onClick={onAddLinea}>
           + Añadir línea
         </button>
       </div>
-    </div>
+    </section>
   );
 }
 

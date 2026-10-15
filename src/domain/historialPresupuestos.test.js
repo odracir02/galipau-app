@@ -3,6 +3,7 @@ import {
   CLAVE_HISTORIAL,
   leerHistorial,
   guardarHistorial,
+  agregarAlHistorial,
   eliminarPresupuesto,
   normalizarPresupuesto,
   formatearPresupuesto,
@@ -146,5 +147,32 @@ describe("eliminarPresupuesto", () => {
     const lista = leerHistorial(storage);
     guardarHistorial(storage, eliminarPresupuesto(lista, 1));
     expect(JSON.parse(storage.datos[CLAVE_HISTORIAL])).toEqual([registroAntiguo, registroActual]);
+  });
+});
+
+describe("agregarAlHistorial", () => {
+  it("añade el presupuesto al final conservando los existentes", () => {
+    const storage = crearStorage({ [CLAVE_HISTORIAL]: JSON.stringify([registroAntiguo]) });
+    expect(agregarAlHistorial(storage, registroActual)).toEqual({ ok: true });
+    expect(JSON.parse(storage.datos[CLAVE_HISTORIAL])).toEqual([registroAntiguo, registroActual]);
+  });
+
+  it("crea el historial si no existe", () => {
+    const storage = crearStorage();
+    expect(agregarAlHistorial(storage, registroActual)).toEqual({ ok: true });
+    expect(JSON.parse(storage.datos[CLAVE_HISTORIAL])).toEqual([registroActual]);
+  });
+
+  it("no sobrescribe un historial ilegible", () => {
+    for (const contenido of ["{no-json", '{"a":1}']) {
+      const storage = crearStorage({ [CLAVE_HISTORIAL]: contenido });
+      expect(agregarAlHistorial(storage, registroActual)).toEqual({ ok: false, motivo: "historialIlegible" });
+      expect(storage.datos[CLAVE_HISTORIAL]).toBe(contenido);
+    }
+  });
+
+  it("informa de errores de almacenamiento (p. ej. cuota llena)", () => {
+    const storage = { getItem: () => null, setItem: () => { throw new Error("QuotaExceededError"); } };
+    expect(agregarAlHistorial(storage, registroActual)).toEqual({ ok: false, motivo: "errorAlmacenamiento" });
   });
 });
