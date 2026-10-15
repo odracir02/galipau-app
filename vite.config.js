@@ -1,4 +1,5 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
+import { esClaveSecreta } from './src/shared/supabase/config.js'
 import react from '@vitejs/plugin-react'
 
 // Development: mounts the Express API inside the Vite dev server, so
@@ -19,11 +20,24 @@ const galipauApi = () => ({
   },
 })
 
+// Build-time guard: a secret Supabase key must never be bundled into the web app
+const sinClavesSecretas = (mode) => {
+  const entorno = loadEnv(mode, process.cwd(), 'VITE_')
+  for (const nombre of ['VITE_SUPABASE_PUBLISHABLE_KEY', 'VITE_SUPABASE_ANON_KEY']) {
+    if (esClaveSecreta(entorno[nombre])) {
+      throw new Error(`${nombre} contains a SECRET Supabase key. Use the public (publishable/anon) key and revoke the secret one.`)
+    }
+  }
+}
+
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  sinClavesSecretas(mode)
+  return {
   plugins: [react(), galipauApi()],
   server: {
     host: '127.0.0.1',
     open: true,
   },
+  }
 })

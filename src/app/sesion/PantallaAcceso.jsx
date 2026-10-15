@@ -1,14 +1,15 @@
 import { useState } from "react";
-import { api } from "../../shared/api/cliente";
 
 const MIN_LONGITUD = 8;
 
-function PantallaAcceso({ configurado, accesoLocal, alEntrar }) {
+function PantallaAcceso({ servicio, configurado, accesoLocal, aviso, alEntrar }) {
+  const [email, setEmail] = useState("");
   const [contrasena, setContrasena] = useState("");
   const [repetir, setRepetir] = useState("");
   const [error, setError] = useState(null);
   const [enviando, setEnviando] = useState(false);
-  const creando = !configurado;
+  const nube = servicio.tipo === "supabase";
+  const creando = !nube && !configurado;
 
   const enviar = async (e) => {
     e.preventDefault();
@@ -17,9 +18,11 @@ function PantallaAcceso({ configurado, accesoLocal, alEntrar }) {
       if (contrasena.length < MIN_LONGITUD) return setError(`La contraseña debe tener al menos ${MIN_LONGITUD} caracteres.`);
       if (contrasena !== repetir) return setError("Las contraseñas no coinciden.");
     }
+    if (nube && (!email.trim() || !contrasena)) return setError("Introduce tu email y tu contraseña.");
     setEnviando(true);
     try {
-      await api.post(creando ? "/auth/configurar" : "/auth/login", { contrasena });
+      if (creando) await servicio.configurar(contrasena);
+      else await servicio.iniciarSesion({ email, contrasena });
       await alEntrar();
     } catch (err) {
       setError(err.message);
@@ -41,9 +44,27 @@ function PantallaAcceso({ configurado, accesoLocal, alEntrar }) {
   return (
     <div className="container mt-5" style={{ maxWidth: 480 }}>
       <h2 className="mb-1">Galipau App</h2>
-      <p className="text-muted">{creando ? "Primer uso: crea la contraseña de acceso." : "Introduce tu contraseña para continuar."}</p>
+      <p className="text-muted">
+        {creando ? "Primer uso: crea la contraseña de acceso." : nube ? "Accede con tu cuenta privada." : "Introduce tu contraseña para continuar."}
+      </p>
+      {aviso && <div className="alert alert-warning" role="alert">{aviso}</div>}
 
       <form noValidate onSubmit={enviar}>
+        {nube && (
+          <div className="mb-3">
+            <label className="form-label" htmlFor="email">Email</label>
+            <input
+              id="email"
+              type="email"
+              className="form-control"
+              autoComplete="username"
+              inputMode="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoFocus
+            />
+          </div>
+        )}
         <div className="mb-3">
           <label className="form-label" htmlFor="contrasena">{creando ? "Nueva contraseña" : "Contraseña"}</label>
           <input
@@ -53,7 +74,7 @@ function PantallaAcceso({ configurado, accesoLocal, alEntrar }) {
             autoComplete={creando ? "new-password" : "current-password"}
             value={contrasena}
             onChange={(e) => setContrasena(e.target.value)}
-            autoFocus
+            autoFocus={!nube}
           />
           {creando && <div className="form-text">Mínimo {MIN_LONGITUD} caracteres. No hay forma de recuperarla: guárdala en un lugar seguro.</div>}
         </div>
