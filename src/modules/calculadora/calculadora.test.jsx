@@ -64,7 +64,13 @@ describe("calculadora de costes de serigrafía", () => {
     await rellenarCasoBase(user);
 
     expect((await screen.findByTestId("coste-total")).textContent).toMatch(/64,99\s€/);
-    expect(screen.getByTestId("precio-recomendado").textContent).toMatch(/86,65\s€/);
+    // 86,65 € / 10 = 8,67 €/ud → 9,00 €/ud (múltiplos de 0,50 € hacia arriba) → 90,00 €
+    expect(screen.getByTestId("precio-unidad-sin-redondear").textContent).toMatch(/8,67\s€/);
+    expect(screen.getByTestId("precio-unidad-redondeado").textContent).toMatch(/9,00\s€/);
+    expect(screen.getByTestId("precio-recomendado").textContent).toMatch(/90,00\s€/);
+    expect(screen.getByTestId("beneficio-recomendado").textContent).toMatch(/25,01\s€/);
+    // The manual final price is not rounded
+    expect(screen.getByTestId("precio-final").textContent).toMatch(/150,00\s€/);
     expect(screen.getByTestId("beneficio").textContent).toMatch(/85,01\s€/);
     const tabla = screen.getByRole("table");
     for (const texto of ["Prendas", "Materiales y consumibles", "Electricidad", "Reserva de maquinaria", "Mano de obra", "Plastisol", "Preparación de pantallas"]) {
@@ -108,6 +114,17 @@ describe("calculadora de costes de serigrafía", () => {
     expect(screen.queryByTestId("coste-total")).toBeNull();
   });
 
+  it("una versión de parámetros anterior a la regla conserva el precio sin redondear y avisa", async () => {
+    const user = userEvent.setup();
+    const antiguos = { ...PARAMETROS_EJEMPLO };
+    delete antiguos.redondeoPrecioUnidad;
+    renderCalculadora(crearSupabase([filaParametros(1, antiguos)]).cliente);
+    await rellenarCasoBase(user);
+    expect((await screen.findByTestId("precio-recomendado")).textContent).toMatch(/86,65\s€/);
+    expect(screen.queryByTestId("precio-unidad-redondeado")).toBeNull();
+    expect(screen.getByText(/no incluye el redondeo del precio recomendado/)).toBeTruthy();
+  });
+
   it("sin parámetros invita a crearlos", async () => {
     renderCalculadora(crearSupabase([]).cliente);
     expect((await screen.findByRole("alert")).textContent).toMatch(/Todavía no hay parámetros/);
@@ -134,6 +151,18 @@ describe("parámetros de cálculo", () => {
     expect(llamadasRpc[0].p_valores.manoObraEurHora).toBe(25.5);
     expect(llamadasRpc[0].p_valores.consumibles).toHaveLength(PARAMETROS_EJEMPLO.consumibles.length);
     expect(screen.getByText(/Versión 1 — .* — archivada/)).toBeTruthy();
+  });
+
+  it("una versión sin la regla de redondeo propone 0,5 € al guardar la siguiente", async () => {
+    const user = userEvent.setup();
+    const antiguos = { ...PARAMETROS_EJEMPLO };
+    delete antiguos.redondeoPrecioUnidad;
+    const { cliente, llamadasRpc } = crearSupabase([filaParametros(1, antiguos)]);
+    renderParametros(cliente);
+    expect((await screen.findByLabelText("Redondeo del precio recomendado por unidad")).value).toBe("0.5");
+    await user.click(screen.getByRole("button", { name: "Guardar como nueva versión" }));
+    await screen.findByText(/Versión 2 guardada y activa/);
+    expect(llamadasRpc[0].p_valores.redondeoPrecioUnidad).toBe(0.5);
   });
 
   it("valida antes de guardar", async () => {

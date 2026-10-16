@@ -14,6 +14,8 @@ export const CAMPOS_PARAMETROS = [
   { clave: "reservaMaquinariaPorPrenda", etiqueta: "Reserva de mantenimiento de maquinaria", unidad: "€/prenda", grupo: "general", min: 0 },
   { clave: "mermaPorDefecto", etiqueta: "Merma estándar", unidad: "fracción (0,04 = 4 %)", grupo: "general", min: 0, max: 1 },
   { clave: "margenRecomendado", etiqueta: "Margen del precio recomendado", unidad: "fracción sobre el precio de venta", grupo: "general", min: 0, max: 0.99 },
+  // Commercial rule (optional so that older parameter versions keep their original results: missing = no rounding)
+  { clave: "redondeoPrecioUnidad", etiqueta: "Redondeo del precio recomendado por unidad", unidad: "€, siempre hacia arriba (0,5 = múltiplos de 0,50 €; 0 = sin redondeo)", grupo: "general", min: 0, max: 100, centimos: true, opcional: true, valorInicial: 0.5 },
   { clave: "electricidadEurKwh", etiqueta: "Electricidad", unidad: "€/kWh", grupo: "electricidad", min: 0 },
   { clave: "flashPotenciaKw", etiqueta: "Flash: potencia", unidad: "kW", grupo: "maquinaria", min: 0 },
   { clave: "flashCalentamientoMin", etiqueta: "Flash: calentamiento", unidad: "min/trabajo", grupo: "maquinaria", min: 0 },
@@ -52,6 +54,7 @@ export const validarParametros = (p) => {
   if (!p || typeof p !== "object") return ["Los parámetros deben ser un objeto."];
   for (const campo of CAMPOS_PARAMETROS) {
     const v = p[campo.clave];
+    if (campo.opcional && (v === undefined || v === null)) continue;
     if (!numero(v)) {
       errores.push(`${campo.etiqueta}: falta o no es un número.`);
       continue;
@@ -59,6 +62,7 @@ export const validarParametros = (p) => {
     if (campo.min !== undefined && v < campo.min) errores.push(`${campo.etiqueta}: debe ser como mínimo ${campo.min}.`);
     if (campo.max !== undefined && v > campo.max) errores.push(`${campo.etiqueta}: debe ser como máximo ${campo.max}.`);
     if (campo.entero && !Number.isInteger(v)) errores.push(`${campo.etiqueta}: debe ser un número entero.`);
+    if (campo.centimos && Math.abs(v * 100 - Math.round(v * 100)) > 1e-9) errores.push(`${campo.etiqueta}: como máximo dos decimales (céntimos).`);
   }
   if (!Array.isArray(p.consumibles)) {
     errores.push("Faltan los consumibles.");
@@ -89,6 +93,7 @@ export const PARAMETROS_EJEMPLO = Object.freeze({
   reservaMaquinariaPorPrenda: 0.1,
   mermaPorDefecto: 0.05,
   margenRecomendado: 0.25,
+  redondeoPrecioUnidad: 0.5,
   electricidadEurKwh: 0.2,
   flashPotenciaKw: 1,
   flashCalentamientoMin: 6,

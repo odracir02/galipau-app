@@ -8,7 +8,8 @@ const texto = (v) => (v === null || v === undefined ? "" : String(v));
 export const consumibleVacio = () => ({ clave: "", nombre: "", base: "pantalla", precio: "", contenido: "1", unidad: "", rendimiento: "", consumo: "" });
 
 export const aFormulario = (valores) => ({
-  campos: Object.fromEntries(CAMPOS_PARAMETROS.map((c) => [c.clave, texto(valores?.[c.clave])])),
+  // Optional rules missing in older versions start with their initial value, so saving creates a version with them
+  campos: Object.fromEntries(CAMPOS_PARAMETROS.map((c) => [c.clave, texto(valores?.[c.clave] ?? c.valorInicial)])),
   consumibles: (valores?.consumibles ?? []).map((c) => ({
     clave: c.clave, nombre: c.nombre, base: c.base, precio: texto(c.precio), contenido: texto(c.contenido),
     unidad: texto(c.unidad), rendimiento: texto(c.rendimiento), consumo: texto(c.consumo), notas: c.notas,

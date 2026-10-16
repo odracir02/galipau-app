@@ -1,7 +1,7 @@
 // Unit tests with FICTITIOUS parameters (PARAMETROS_EJEMPLO). Expected values
 // were worked out by hand from the model formulas.
 import { describe, it, expect } from "vitest";
-import { calcularCosteSerigrafia, validarEntrada, aCentimos, ErrorCalculo } from "./motor";
+import { calcularCosteSerigrafia, validarEntrada, aCentimos, redondearArribaCent, ErrorCalculo, VERSION_MOTOR } from "./motor";
 import { PARAMETROS_EJEMPLO, validarParametros, costePorBase } from "./parametros";
 
 const P = PARAMETROS_EJEMPLO;
@@ -55,8 +55,12 @@ describe("modelo de coste (caso base calculado a mano)", () => {
     expect(r.costes.total).toBeCloseTo(64.99, 10);
     expect(r.costes.totalCent).toBe(6499);
     expect(r.costes.porUnidadCent).toBe(650);
-    expect(r.precio.recomendadoCent).toBe(8665); // 64,99 / 0,75
-    expect(r.precio.recomendadoPorUnidadCent).toBe(867);
+    expect(r.precio.recomendadoSinRedondearCent).toBe(8665); // 64,99 / 0,75
+    expect(r.precio.recomendadoPorUnidadSinRedondearCent).toBe(867);
+    expect(r.precio.recomendadoPorUnidadCent).toBe(900); // 8,67 → 9,00 (múltiplo de 0,50 hacia arriba)
+    expect(r.precio.recomendadoCent).toBe(9000); // 9,00 × 10
+    expect(r.precio.beneficioRecomendado.cent).toBe(2501); // 90,00 − 64,99
+    expect(r.precio.beneficioRecomendado.margen).toBeCloseTo(25.01 / 90, 10);
     expect(r.beneficio.cent).toBe(8501);
     expect(r.beneficio.margen).toBeCloseTo(85.01 / 150, 10);
   });
@@ -121,7 +125,7 @@ describe("precio final, beneficio y redondeos", () => {
     const r = calcularCosteSerigrafia(base({ precioFinal: null }), P);
     expect(r.beneficio).toBeNull();
     expect(r.precio.final).toBeNull();
-    expect(r.precio.recomendadoCent).toBe(8665);
+    expect(r.precio.recomendadoCent).toBe(9000);
   });
 
   it("precio final 0: pérdida igual al coste y margen 0 (sin dividir por cero)", () => {
@@ -152,6 +156,60 @@ describe("precio final, beneficio y redondeos", () => {
   });
 });
 
+describe("redondeo del precio recomendado (regla comercial)", () => {
+  it.each([
+    [300, 300], [301, 350], [315, 350], [350, 350], [360, 400], [399, 400], [401, 450], [0, 0], [1, 50],
+  ])("%i céntimos → %i", (cent, esperado) => {
+    expect(redondearArribaCent(cent, 50)).toBe(esperado);
+  });
+
+  it("sin errores de coma flotante: un unitario de 3,00 € calculado con decimales sigue en 3,00 €", () => {
+    expect((0.1 + 0.2) * 10).not.toBe(3); // 3.0000000000000004
+    expect(redondearArribaCent(aCentimos((0.1 + 0.2) * 10), 50)).toBe(300);
+    expect(Math.ceil((0.1 + 0.2) * 10 * 2) / 2).toBe(3.5); // the naive float formula would fail here
+  });
+
+  it("paso 0 o ausente: no redondea", () => {
+    expect(redondearArribaCent(867, 0)).toBe(867);
+    const antiguos = { ...P };
+    delete antiguos.redondeoPrecioUnidad; // parameter versions saved before the rule existed
+    const r = calcularCosteSerigrafia(base(), antiguos);
+    expect(r.precio.recomendadoCent).toBe(8665);
+    expect(r.precio.recomendadoPorUnidadCent).toBe(867);
+    expect(r.precio.redondeoPorUnidadCent).toBe(0);
+    expect(calcularCosteSerigrafia(base(), { ...P, redondeoPrecioUnidad: 0 }).precio.recomendadoCent).toBe(8665);
+  });
+
+  it("el paso es configurable", () => {
+    expect(calcularCosteSerigrafia(base(), { ...P, redondeoPrecioUnidad: 0.05 }).precio.recomendadoCent).toBe(8700); // 8,67 → 8,70
+    expect(calcularCosteSerigrafia(base(), { ...P, redondeoPrecioUnidad: 1 }).precio.recomendadoCent).toBe(9000);
+  });
+
+  it("el total redondeado es siempre unidades × unitario redondeado", () => {
+    for (const cantidad of [1, 3, 7, 25, 100]) {
+      const r = calcularCosteSerigrafia(base({ lineas: [{ cantidad, precioUnitario: 2.37 }] }), P);
+      expect(r.precio.recomendadoPorUnidadCent % 50).toBe(0);
+      expect(r.precio.recomendadoPorUnidadCent).toBeGreaterThanOrEqual(r.precio.recomendadoPorUnidadSinRedondearCent);
+      expect(r.precio.recomendadoPorUnidadCent - r.precio.recomendadoPorUnidadSinRedondearCent).toBeLessThan(50);
+      expect(r.precio.recomendadoCent).toBe(r.precio.recomendadoPorUnidadCent * cantidad);
+    }
+  });
+
+  it("no cambia el coste ni el precio final introducido a mano", () => {
+    const antiguos = { ...P };
+    delete antiguos.redondeoPrecioUnidad;
+    const con = calcularCosteSerigrafia(base({ precioFinal: 123.45 }), P);
+    const sin = calcularCosteSerigrafia(base({ precioFinal: 123.45 }), antiguos);
+    expect(con.costes).toEqual(sin.costes);
+    expect(con.precio.finalCent).toBe(12345);
+    expect(con.beneficio).toEqual(sin.beneficio);
+  });
+
+  it("el resultado indica la versión del motor", () => {
+    expect(calcularCosteSerigrafia(base(), P).motor).toBe(VERSION_MOTOR);
+  });
+});
+
 describe("validación", () => {
   it.each([
     [{ lineas: [] }, /al menos una línea/],
@@ -173,6 +231,9 @@ describe("validación", () => {
     expect(validarParametros({ ...P, manoObraEurHora: -1 }).join(" ")).toMatch(/Mano de obra/);
     expect(validarParametros({ ...P, margenRecomendado: 1 }).join(" ")).toMatch(/Margen/);
     expect(validarParametros({ ...P, hornoCapacidadPantallas: 2.5 }).join(" ")).toMatch(/entero/);
+    expect(validarParametros({ ...P, redondeoPrecioUnidad: 0.555 }).join(" ")).toMatch(/dos decimales/);
+    expect(validarParametros({ ...P, redondeoPrecioUnidad: -0.5 }).join(" ")).toMatch(/Redondeo/);
+    expect(validarParametros({ ...P, redondeoPrecioUnidad: null })).toEqual([]);
     const sinCampo = { ...P };
     delete sinCampo.curadoSegPrenda;
     expect(validarParametros(sinCampo).join(" ")).toMatch(/Curado/);

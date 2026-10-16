@@ -171,6 +171,12 @@ function PaginaCalculadoraSerigrafia({ obtenerCliente = obtenerClienteSupabase, 
 
       {resultado && (
         <>
+          {parametros.valores.redondeoPrecioUnidad == null && (
+            <div className="alert alert-info small mt-3 mb-0" role="note">
+              La versión {parametros.version} de los parámetros no incluye el redondeo del precio recomendado. Para activarlo, guarda una nueva versión en{" "}
+              <Link to="/parametros">Parámetros</Link> (el campo viene relleno con 0,5 €).
+            </div>
+          )}
           <DesgloseCostes resultado={resultado} parametrosVersion={parametros.version} />
           <div className="form-check mt-2">
             <input id="comparar" type="checkbox" className="form-check-input" checked={comparar} onChange={(e) => setComparar(e.target.checked)} />

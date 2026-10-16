@@ -5,15 +5,17 @@
 // Model (per quote):
 //   U = total garments, P = screens = Σ colours per printed zone
 //   cost = garments × (1 + waste) + consumables + electricity + machinery reserve + labour
-//   recommended price = cost / (1 − recommended margin)
+//   recommended price = cost / (1 − recommended margin), then (commercial rule,
+//   optional per parameter version) the unit price is rounded UP to a multiple
+//   of `redondeoPrecioUnidad` and multiplied back by the units
 //   profit = final price − cost; margin = profit / final price
 // Amounts are computed in euros (floating point, like the spreadsheet) and
-// rounded to cents only in the totals. Sales VAT is NOT handled (pending a
+// rounded to cents only in the totals; price rounding works on integer cents. Sales VAT is NOT handled (pending a
 // business decision): the final price is used as entered.
 
 import { costePorBase, validarParametros, BASES_CONSUMO } from "./parametros";
 
-export const VERSION_MOTOR = "serigrafia-coste-real/1";
+export const VERSION_MOTOR = "serigrafia-coste-real/2";
 
 export class ErrorCalculo extends Error {
   constructor(errores) {
@@ -23,6 +25,10 @@ export class ErrorCalculo extends Error {
 }
 
 export const aCentimos = (euros) => Math.round(euros * 100);
+
+// Rounds integer cents UP to the next multiple of `pasoCent` (0 = no rounding).
+// Integer arithmetic avoids floating point errors (e.g. 3,00 € stays 3,00 €).
+export const redondearArribaCent = (cent, pasoCent) => (pasoCent > 0 ? Math.ceil(cent / pasoCent) * pasoCent : cent);
 
 const entero = (v) => Number.isInteger(v) && v >= 0;
 
@@ -122,6 +128,15 @@ export const calcularCosteSerigrafia = (entrada, p) => {
   const margen = precioFinal === null ? null : precioFinal === 0 ? 0 : beneficio / precioFinal;
   const porUnidad = (v) => (U === 0 || v === null ? null : v / U);
 
+  // Recommended price: unit price in cents, rounded up by the commercial rule, times the units
+  const costeTotalCent = aCentimos(costeTotal);
+  const pasoCent = aCentimos(p.redondeoPrecioUnidad ?? 0);
+  const recomendadoSinRedondearCent = aCentimos(precioRecomendado);
+  const recomendadoPorUnidadSinRedondearCent = aCentimos(precioRecomendado / U);
+  const recomendadoPorUnidadCent = redondearArribaCent(recomendadoPorUnidadSinRedondearCent, pasoCent);
+  const recomendadoCent = pasoCent > 0 ? recomendadoPorUnidadCent * U : recomendadoSinRedondearCent;
+  const beneficioRecomendadoCent = recomendadoCent - costeTotalCent;
+
   return {
     motor: VERSION_MOTOR,
     unidades: U,
@@ -141,15 +156,23 @@ export const calcularCosteSerigrafia = (entrada, p) => {
         { clave: "manoObra", etiqueta: "Mano de obra", importe: totalManoObra, cent: aCentimos(totalManoObra), conceptos: manoObra },
       ],
       total: costeTotal,
-      totalCent: aCentimos(costeTotal),
+      totalCent: costeTotalCent,
       porUnidad: porUnidad(costeTotal),
       porUnidadCent: U === 0 ? null : aCentimos(costeTotal / U),
     },
     precio: {
-      recomendado: precioRecomendado,
-      recomendadoCent: aCentimos(precioRecomendado),
-      recomendadoPorUnidadCent: U === 0 ? null : aCentimos(precioRecomendado / U),
+      recomendado: recomendadoCent / 100,
+      recomendadoCent,
+      recomendadoPorUnidadCent,
+      recomendadoSinRedondearCent,
+      recomendadoPorUnidadSinRedondearCent,
+      redondeoPorUnidadCent: pasoCent,
       margenRecomendado: p.margenRecomendado,
+      // Expected profit and margin if the rounded recommended price is charged
+      beneficioRecomendado: {
+        cent: beneficioRecomendadoCent,
+        margen: recomendadoCent === 0 ? 0 : beneficioRecomendadoCent / recomendadoCent,
+      },
       final: precioFinal,
       finalCent: precioFinal === null ? null : aCentimos(precioFinal),
     },
