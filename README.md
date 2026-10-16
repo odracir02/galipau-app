@@ -9,6 +9,9 @@ Galipau App is a single-owner web application. It is moving to a **cloud deploym
 - Quote calculator for DTF and screen printing (multiple blocks and lines, live validation)
 - **Real-cost calculator for screen printing**: garments with waste, consumables, electricity, machinery reserve and labour, with a readable cost breakdown, recommended price and margin
 - **Versioned pricing parameters** editable from the app (each change creates a new version; previous versions are kept)
+- **Persistent quotes** (cloud mode): customers, multi-line jobs, lifecycle with enforced transitions (draft → presented → accepted → in production → finished → paid, or cancelled), gap-free numbering assigned on presentation, and an economic snapshot (engine and parameter versions) that keeps every quote reproducible
+- **Customer PDF** in Spanish or Valencian, without internal costs or margins
+- **Controlled data migration** from the legacy browser history and catalogue: preview, duplicate detection, integrity checks and revert
 - Customers API (create, edit, search, archive)
 - Product catalogue (suppliers → models → variants), costs stored as integer cents
 - Single-owner authentication (scrypt password hashing, server-side sessions, brute-force protection)
@@ -31,6 +34,7 @@ Galipau App is a single-owner web application. It is moving to a **cloud deploym
   - use a test Supabase project for preview deployments and the production project for production;
   - React Router routes are served by the Pages single-page-application fallback;
   - security headers are defined in `public/_headers`.
+- **Production helpers:** `npm run sql:instalacion` writes all migrations as one transactional SQL file (to a git-ignored folder) for the Supabase SQL Editor; `npm run verificar:nube` checks a project from the outside, as an anonymous visitor, using only its public URL and publishable key.
 - **Sample data:** `supabase/datos-ficticios.sql` contains fictitious data for the test project only. It refuses to run on a database marked as production.
 
 ## 🛠️ Built With
