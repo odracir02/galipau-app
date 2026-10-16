@@ -65,8 +65,9 @@ describe("modelo de coste (caso base calculado a mano)", () => {
     expect(r.beneficio.margen).toBeCloseTo(85.01 / 150, 10);
   });
 
-  it("deja el IVA de las ventas como pendiente, sin aplicarlo", () => {
-    expect(r.ingresos.iva.tratamiento).toBe("pendiente");
+  it("no añade IVA a las ventas (decisión del propietario) ni declara exención", () => {
+    expect(r.ingresos.iva.tratamiento).toBe("sinIvaAnadido");
+    expect(r.ingresos.iva.mensaje).not.toMatch(/exent/i);
     expect(r.precio.finalCent).toBe(15000);
   });
 

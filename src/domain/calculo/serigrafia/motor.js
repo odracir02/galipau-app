@@ -10,8 +10,8 @@
 //   of `redondeoPrecioUnidad` and multiplied back by the units
 //   profit = final price − cost; margin = profit / final price
 // Amounts are computed in euros (floating point, like the spreadsheet) and
-// rounded to cents only in the totals; price rounding works on integer cents. Sales VAT is NOT handled (pending a
-// business decision): the final price is used as entered.
+// rounded to cents only in the totals; price rounding works on integer cents. Sales VAT is NOT added
+// (owner decision: prices without VAT); the final price is used as entered.
 
 import { costePorBase, validarParametros, BASES_CONSUMO } from "./parametros";
 
@@ -177,8 +177,9 @@ export const calcularCosteSerigrafia = (entrada, p) => {
       finalCent: precioFinal === null ? null : aCentimos(precioFinal),
     },
     ingresos: {
-      // Sales VAT treatment is undefined until the owner confirms the tax regime
-      iva: { tratamiento: "pendiente", mensaje: "Tratamiento del IVA en ventas pendiente de definir: el precio final se usa tal como se introduce." },
+      // Owner decision: prices are quoted without adding VAT. This is NOT a VAT exemption claim:
+      // the tax regime is still to be confirmed, and a configurable treatment can be added here later.
+      iva: { tratamiento: "sinIvaAnadido", mensaje: "Precios sin IVA añadido: ni el precio recomendado ni el precio final suman IVA." },
     },
     beneficio: beneficio === null ? null : {
       importe: beneficio,

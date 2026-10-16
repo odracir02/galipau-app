@@ -76,7 +76,7 @@ describe("calculadora de costes de serigrafía", () => {
     for (const texto of ["Prendas", "Materiales y consumibles", "Electricidad", "Reserva de maquinaria", "Mano de obra", "Plastisol", "Preparación de pantallas"]) {
       expect(within(tabla).getAllByText(new RegExp(texto)).length).toBeGreaterThan(0);
     }
-    expect(screen.getByText(/IVA en ventas pendiente/)).toBeTruthy();
+    expect(screen.getByText(/Precios sin IVA añadido/)).toBeTruthy();
   });
 
   it("un precio manual sustituye al del catálogo", async () => {
