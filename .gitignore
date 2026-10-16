@@ -59,3 +59,6 @@ CLAUDE.local.md
 # Local reference files (business spreadsheets, never published)
 /Referencias/
 /referencias/
+
+# Private business data: internal tariffs and reference quotes (never published)
+/privado/

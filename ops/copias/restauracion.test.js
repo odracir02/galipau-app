@@ -43,8 +43,8 @@ afterAll(async () => {
 describe("volcado", () => {
   it("contiene la estructura, la seguridad y los datos esperados", () => {
     expect(copia.esquema).toMatch(/CREATE TABLE public\.presupuestos/);
-    expect((copia.esquema.match(/ENABLE ROW LEVEL SECURITY/g) ?? []).length).toBe(9);
-    expect((copia.esquema.match(/CREATE POLICY/g) ?? []).length).toBe(9);
+    expect((copia.esquema.match(/ENABLE ROW LEVEL SECURITY/g) ?? []).length).toBe(10);
+    expect((copia.esquema.match(/CREATE POLICY/g) ?? []).length).toBe(12);
     expect((copia.datos.match(/^INSERT INTO public\.variantes/gm) ?? []).length).toBe(36);
     expect(copia.datos).toMatch(/OVERRIDING SYSTEM VALUE/);
     expect(copia.datos).toMatch(/setval\('public\.clientes_id_seq'/);

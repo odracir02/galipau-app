@@ -1,7 +1,7 @@
 // Test double of the supabase-js client (tests only, never imported by the app).
 // Tables are plain arrays; queries support select/order/range/limit/eq.
 
-export const crearClienteFalso = ({ tablas = {}, usuarios = [], propietario = null, sesionInicial = null, fallos = {} } = {}) => {
+export const crearClienteFalso = ({ tablas = {}, usuarios = [], propietario = null, sesionInicial = null, fallos = {}, rpcs = {} } = {}) => {
   let sesion = sesionInicial;
   const oyentes = new Set();
   const llamadas = [];
@@ -39,8 +39,10 @@ export const crearClienteFalso = ({ tablas = {}, usuarios = [], propietario = nu
   return {
     llamadas,
     from: (tabla) => consulta(tabla),
-    rpc: async (nombre) => {
+    rpc: async (nombre, args) => {
       if (fallos.rpc) return { data: null, error: fallos.rpc };
+      llamadas.push(`rpc:${nombre}`);
+      if (rpcs[nombre]) return rpcs[nombre](args, tablas);
       if (nombre === "es_propietario") return { data: Boolean(sesion && sesion.user.id === propietario), error: null };
       return { data: null, error: { code: "PGRST202", message: "not found" } };
     },

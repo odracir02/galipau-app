@@ -10,3 +10,20 @@
 
 export { calcularPresupuestoLegacy as calcularPresupuesto } from "./calculoLegacy";
 export { PARAMETROS_LEGACY } from "./parametrosLegacy";
+
+// Real-cost engines by technique (screen printing first; DTF will follow the
+// same contract: calcular(entrada, parametros) -> { costes, precio, beneficio, ... }).
+export { calcularCosteSerigrafia, VERSION_MOTOR as VERSION_MOTOR_SERIGRAFIA, ErrorCalculo } from "./serigrafia/motor";
+export { CAMPOS_PARAMETROS, GRUPOS_PARAMETROS, BASES_CONSUMO, validarParametros } from "./serigrafia/parametros";
+
+import { calcularCosteSerigrafia } from "./serigrafia/motor";
+
+export const MOTORES_COSTE = Object.freeze({
+  serigrafia: calcularCosteSerigrafia,
+});
+
+export const calcularCostePorTecnica = (tecnica, entrada, parametros) => {
+  const motor = MOTORES_COSTE[tecnica];
+  if (!motor) throw new Error(`No real-cost engine for technique: ${tecnica}`);
+  return motor(entrada, parametros);
+};

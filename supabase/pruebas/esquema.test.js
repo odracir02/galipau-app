@@ -19,10 +19,10 @@ const insertarCliente = (tx, datos = {}) =>
 
 describe("migraciones", () => {
   it("se aplican en orden y crean el esquema esperado", async () => {
-    expect(listarMigraciones()).toEqual(["20261015120000_esquema_inicial.sql", "20261015120100_almacenamiento.sql"]);
+    expect(listarMigraciones()).toEqual(["20261015120000_esquema_inicial.sql", "20261015120100_almacenamiento.sql", "20261016090000_parametros_calculo.sql"]);
     const { rows } = await db.query("select tablename from pg_tables where schemaname = 'public' order by tablename");
     expect(rows.map((r) => r.tablename)).toEqual([
-      "clientes", "configuracion", "contadores", "modelos", "presupuestos", "propietario", "proveedores", "registro_copias", "variantes",
+      "clientes", "configuracion", "contadores", "modelos", "parametros_calculo", "presupuestos", "propietario", "proveedores", "registro_copias", "variantes",
     ]);
   });
 
