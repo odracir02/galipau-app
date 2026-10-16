@@ -63,6 +63,11 @@ describe("verificación externa de un proyecto (como visitante anónimo)", () =>
     expect(r.resultados.find((x) => !x.ok).prueba).toBe(prueba);
   });
 
+  it("una clave equivocada no cuenta como acceso denegado", async () => {
+    const f = async () => ({ status: 401, ok: false, text: async () => JSON.stringify({ message: "Invalid API key" }), json: async () => ({}) });
+    await expect(verificarProyecto({ ...base, fetch: f })).rejects.toThrow(/no es válida/);
+  });
+
   it("rechaza una clave secreta", async () => {
     await expect(verificarProyecto({ ...base, clave: "sb_secret_abc", fetch: fetchFalso() })).rejects.toThrow(/SECRETA/);
   });

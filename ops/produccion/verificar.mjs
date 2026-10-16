@@ -40,6 +40,8 @@ export const verificarProyecto = async ({ url, clave, fetch: pedir = globalThis.
   for (const tabla of TABLAS) {
     const r = await pedir(`${base}/rest/v1/${tabla}?select=*&limit=1`, { headers: cabeceras });
     const cuerpo = await r.text();
+    // A wrong key is also answered with 401: that must not pass as "access denied"
+    if (/invalid api key/i.test(cuerpo)) throw new Error("La clave no es válida para este proyecto (Invalid API key): revisa que esté completa y que sea de este proyecto.");
     let filas = null;
     try {
       filas = JSON.parse(cuerpo);
