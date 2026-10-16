@@ -264,8 +264,9 @@ describe("migración sobre un proyecto con datos del esquema anterior", () => {
     const { listarMigraciones, CARPETA_MIGRACIONES } = await import("./bd.js");
     const vieja = await PGlite.create();
     await vieja.exec(fs.readFileSync(new URL("./entorno-supabase.sql", import.meta.url), "utf8"));
-    const [ultima, ...anteriores] = listarMigraciones().reverse();
-    for (const m of anteriores.reverse()) await vieja.exec(fs.readFileSync(`${CARPETA_MIGRACIONES}/${m}`, "utf8"));
+    const todas = listarMigraciones();
+    const ultima = "20261017090000_presupuestos_ciclo_vida.sql";
+    for (const m of todas.slice(0, todas.indexOf(ultima))) await vieja.exec(fs.readFileSync(`${CARPETA_MIGRACIONES}/${m}`, "utf8"));
     await vieja.exec(`insert into public.presupuestos (numero, cliente_nombre, estado, motor, entrada, total_cent) values
       ('A', 'C', 'enviado', 'legacy', '{}', 1), ('B', 'C', 'importado', 'legacy', '{}', 2), ('C', 'C', 'caducado', 'legacy', '{}', 3)`);
     await vieja.exec(fs.readFileSync(`${CARPETA_MIGRACIONES}/${ultima}`, "utf8"));

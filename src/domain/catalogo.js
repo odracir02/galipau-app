@@ -2,7 +2,10 @@
 // lookup. The same colour classification is used for both, so the options the
 // user sees always match the products found when calculating.
 
-export const ORDEN_TALLAS = ["Niño", "S", "M", "L", "XL", "2XL", "3XL"];
+export const ORDEN_TALLAS = [
+  "Niño", "02A", "04A", "06A", "08A", "10A", "12A", "14A", "16A",
+  "XXS", "XS", "S", "M", "L", "XL", "XXL", "2XL", "3XL", "XXXL", "4XL", "5XL", "TU",
+];
 
 export const COLOR_BLANCA = "Blanca";
 export const COLOR_COLOR = "Color";
@@ -20,8 +23,13 @@ export const categoriaColor = (color) => {
 
 const unicos = (valores) => [...new Set(valores.filter((v) => v !== undefined && v !== null && v !== ""))];
 
+// Known sizes in garment order; unknown ones go last, alphabetically
+const posicionTalla = (t) => {
+  const i = ORDEN_TALLAS.findIndex((x) => x.toLowerCase() === String(t).toLowerCase());
+  return i === -1 ? ORDEN_TALLAS.length : i;
+};
 const ordenarTallas = (tallas) =>
-  [...tallas].sort((a, b) => ORDEN_TALLAS.indexOf(a) - ORDEN_TALLAS.indexOf(b));
+  [...tallas].sort((a, b) => posicionTalla(a) - posicionTalla(b) || String(a).localeCompare(String(b)));
 
 export const opcionesLinea = (productos, linea) => {
   const { tipo, proveedor, modelo, size } = linea;
@@ -65,3 +73,43 @@ export const resolverCostePrenda = (productos, linea) => {
     producto: candidatos[0],
   };
 };
+
+// ---------------------------------------------------------------------------
+// Exact product selection (real-cost calculator and quotes):
+// supplier -> model -> colour -> size, with the real colour, so the price is
+// the one of that exact variant. Only existing combinations are offered.
+// ---------------------------------------------------------------------------
+
+const ordenAlfabetico = (lista) => [...lista].sort((a, b) => String(a).localeCompare(String(b), "es"));
+
+export const opcionesPrenda = (productos, linea, busqueda = "") => {
+  const q = normalizarTexto(busqueda);
+  const visibles = q
+    ? productos.filter((p) => normalizarTexto(`${p.proveedor} ${p.modelo} ${p.tipo ?? ""} ${p.referencia ?? ""}`).includes(q))
+    : productos;
+  const delProveedor = visibles.filter((p) => p.proveedor === linea.proveedor);
+  const delModelo = delProveedor.filter((p) => p.modelo === linea.modelo);
+  const delColor = delModelo.filter((p) => p.color === linea.color);
+  return {
+    proveedores: ordenAlfabetico(unicos(visibles.map((p) => p.proveedor))),
+    modelos: ordenAlfabetico(unicos(delProveedor.map((p) => p.modelo))),
+    colores: ordenAlfabetico(unicos(delModelo.map((p) => p.color))),
+    tallas: ordenarTallas(unicos(delColor.map((p) => p.talla))),
+  };
+};
+
+// Changing a level clears the levels below it and the chosen product
+const NIVELES = ["proveedor", "modelo", "color", "size"];
+export const elegirEnPrenda = (linea, campo, valor, productos) => {
+  const nueva = { ...linea, [campo]: valor };
+  for (const c of NIVELES.slice(NIVELES.indexOf(campo) + 1)) nueva[c] = "";
+  delete nueva.precioGuardado;
+  const producto = productos.find(
+    (p) => p.proveedor === nueva.proveedor && p.modelo === nueva.modelo && p.color === nueva.color && p.talla === nueva.size
+  );
+  nueva.productoId = producto ? String(producto.id) : "";
+  if (producto) nueva.tipo = producto.tipo ?? nueva.tipo;
+  return nueva;
+};
+
+export const productoPorId = (productos, id) => (id ? productos.find((p) => String(p.id) === String(id)) ?? null : null);

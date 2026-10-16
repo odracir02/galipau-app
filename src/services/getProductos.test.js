@@ -32,3 +32,28 @@ describe("fuente del catálogo", () => {
     await expect(getProductos("local")).rejects.toMatchObject({ estado: 401, message: "Inicia sesión para continuar." });
   });
 });
+
+describe("catálogo de Supabase antes de aplicar la migración del precio neto", () => {
+  it("si faltan las columnas nuevas, lee las originales", async () => {
+    const { leerCatalogoSupabase } = await import("./getProductos");
+    const pedidas = [];
+    const sb = {
+      from: () => ({
+        select: (columnas) => {
+          pedidas.push(columnas);
+          const q = {
+            order: () => q,
+            range: () => q,
+            then: (ok) => Promise.resolve(columnas.includes("precio_neto")
+              ? { data: null, error: { code: "42703", message: "column v_catalogo_plano.coste does not exist" } }
+              : { data: [{ id: 1, tipo: "Camiseta", proveedor: "P", modelo: "M", talla: "M", color: "Negro", coste_cent: 300 }], error: null }).then(ok),
+          };
+          return q;
+        },
+      }),
+    };
+    const productos = await leerCatalogoSupabase(sb);
+    expect(pedidas).toHaveLength(2);
+    expect(productos[0]).toMatchObject({ coste: 3, costeCent: 300, precioNeto: null });
+  });
+});

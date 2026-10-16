@@ -45,8 +45,8 @@ const rellenarCasoBase = async (user) => {
   const linea = within(await screen.findByRole("group", { name: "Línea 1" }));
   await user.selectOptions(linea.getByLabelText("Proveedor"), "Demo");
   await user.selectOptions(linea.getByLabelText("Modelo"), "Básica");
+  await user.selectOptions(linea.getByLabelText("Color"), "Negro");
   await user.selectOptions(linea.getByLabelText("Talla"), "M");
-  await user.selectOptions(linea.getByLabelText("Color"), "Color");
   await user.type(linea.getByLabelText("Cantidad"), "10");
   await user.clear(screen.getByLabelText("Colores Trasera"));
   await user.type(screen.getByLabelText("Colores Trasera"), "1");

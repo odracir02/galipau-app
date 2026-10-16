@@ -66,8 +66,8 @@ const rellenarTrabajo = async (user) => {
   const linea = within(screen.getByRole("group", { name: "Línea 1" }));
   await user.selectOptions(linea.getByLabelText("Proveedor"), "Demo");
   await user.selectOptions(linea.getByLabelText("Modelo"), "Básica");
+  await user.selectOptions(linea.getByLabelText("Color"), "Negro");
   await user.selectOptions(linea.getByLabelText("Talla"), "M");
-  await user.selectOptions(linea.getByLabelText("Color"), "Color");
   await user.type(linea.getByLabelText("Cantidad"), "10");
   await user.clear(screen.getByLabelText("Colores Trasera"));
   await user.type(screen.getByLabelText("Colores Trasera"), "1");
@@ -294,10 +294,11 @@ describe("migración controlada", () => {
     expect((await screen.findByRole("alert")).textContent).toMatch(/no contiene una lista/);
   });
 
-  it("vista previa del catálogo: nuevos, existentes, conflictos y costes distintos", async () => {
+  it("catálogo desde Firestore: nuevos, existentes, conflictos, costes distintos y no válidos", async () => {
     const user = userEvent.setup();
     const { sb, tablas } = crearBd();
-    tablas.v_catalogo_plano = [{ id: 1, tipo: "Camiseta", proveedor: "Demo", modelo: "Básica", talla: "M", color: "Negro", coste_cent: 310 }];
+    tablas.v_catalogo_plano = [{ id: 1, tipo: "Camiseta", proveedor: "Demo", modelo: "Básica", talla: "M", color: "Negro", coste_cent: 310, coste: 3.1 }];
+    tablas.registro_copias = [{ id: 1, tipo: "base_datos", estado: "correcta", creada_en: new Date().toISOString() }];
     const firestore = [
       { id: "a", tipo: "Camiseta", proveedor: "Demo", modelo: "Básica", talla: "M", color: "Negro", coste: 3 },
       { id: "b", tipo: "Camiseta", proveedor: "Demo", modelo: "Básica", talla: "L", color: "Negro", coste: "3,2" },
@@ -306,10 +307,44 @@ describe("migración controlada", () => {
       { id: "e", tipo: "Polo", proveedor: "", modelo: "P", talla: "S", color: "Rojo", coste: 6 },
     ];
     render(<PaginaMigracion obtenerCliente={async () => sb} leerAlmacen={() => almacen([])} leerCatalogoFirestore={async () => firestore} />);
-    await user.click(screen.getAllByRole("button", { name: "Ver vista previa" })[1]);
+    await user.click(screen.getByRole("button", { name: "Vista previa desde Firestore" }));
     const vista = within(await screen.findByTestId("vista-catalogo"));
-    expect(vista.getByText(/Leídos/).textContent).toMatch(/Leídos 5 · nuevos 1 · ya existentes 0 · coste distinto en Supabase 1 · conflictos 1 · no válidos 1/);
-    expect(vista.getByText(/Conflicto: Otro P S Rojo/)).toBeTruthy();
+    expect(vista.getByText(/leídos/).textContent).toMatch(/leídos 5 · válidos únicos 2 · nuevos 1 · ya existentes 0 · coste distinto en Supabase 1 · conflictos 1 · no válidos 1/);
+    expect(vista.getByText(/Conflicto: Otro P Rojo S/)).toBeTruthy();
+    expect(vista.getByText("Camiseta (ya existe)")).toBeTruthy();
     expect(vista.getByRole("button", { name: "Importar 1 productos" }).disabled).toBe(true);
+  });
+
+  it("catálogo desde archivo con neto e IVA: tipo por modelo, copia reciente obligatoria, importa y cuadra", async () => {
+    const user = userEvent.setup();
+    const { sb, tablas, rpcs } = crearBd();
+    tablas.v_catalogo_plano = [];
+    tablas.registro_copias = [{ id: 1, tipo: "base_datos", estado: "correcta", creada_en: "2020-01-01T00:00:00Z" }];
+    rpcs.importar_catalogo = (args, t) => {
+      t.importaciones.push({ id: 1, tipo: "catalogo_firestore", creada_en: "2026-10-17T12:00:00Z", resumen: args.p_resumen, revertida_en: null });
+      args.p_filas.forEach((f, i) => t.v_catalogo_plano.push({ id: i + 1, ...f, coste: (f.precio_neto * (100 + f.iva_porcentaje)) / 100 }));
+      return { data: 1, error: null };
+    };
+    const archivo = new File([JSON.stringify({ formato: "galipau-catalogo/1", productos: [
+      { proveedor: "Marca Ficticia", modelo: "BASE", color: "BLANCO", talla: "M", precio_neto: 2.5, iva: 0.21, coste: 3.025 },
+      { proveedor: "Marca Ficticia", modelo: "BASE", color: "BLANCO", talla: "L", precio_neto: 2.5, iva: 0.21, coste: 3.025 },
+    ] })], "catalogo.json", { type: "application/json" });
+    render(<PaginaMigracion obtenerCliente={async () => sb} leerAlmacen={() => almacen([])} />);
+    await user.upload(screen.getByLabelText("o desde un archivo de catálogo:"), archivo);
+    const vista = within(await screen.findByTestId("vista-catalogo"));
+    expect(vista.getAllByText("3,025 €")).toHaveLength(2);
+    expect(vista.getByText("Falta el tipo de prenda de 1 modelo(s).")).toBeTruthy();
+    expect(vista.getByRole("alert").textContent).toMatch(/No hay una copia de seguridad correcta/);
+    await user.type(vista.getByLabelText("Tipo de Marca Ficticia BASE"), "Camiseta");
+    await user.type(vista.getByLabelText(/escribe IMPORTAR/), "IMPORTAR");
+    expect(vista.getByRole("button", { name: "Importar 2 productos" }).disabled).toBe(true); // backup too old
+    tablas.registro_copias.unshift({ id: 2, tipo: "base_datos", estado: "correcta", creada_en: new Date().toISOString() });
+    await user.upload(screen.getByLabelText("o desde un archivo de catálogo:"), archivo);
+    const vista2 = within(await screen.findByTestId("vista-catalogo"));
+    await user.type(vista2.getByLabelText("Tipo de Marca Ficticia BASE"), "Camiseta");
+    await user.type(vista2.getByLabelText(/escribe IMPORTAR/), "IMPORTAR");
+    await user.click(vista2.getByRole("button", { name: "Importar 2 productos" }));
+    expect(await screen.findByText(/Importación 1 correcta: 2 productos nuevos. Comprobación: 2 de 2/)).toBeTruthy();
+    expect(tablas.v_catalogo_plano[0]).toMatchObject({ tipo: "Camiseta", precio_neto: 2.5, iva_porcentaje: 21, coste_cent: 303 });
   });
 });

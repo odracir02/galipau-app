@@ -125,7 +125,10 @@ describe("catálogo desde Supabase", () => {
     const sb = crearClienteFalso({ tablas: { v_catalogo_plano: vista } });
     const productos = await leerCatalogoSupabase(sb);
     expect(productos).toHaveLength(1001);
-    expect(productos[0]).toEqual({ id: "1", tipo: "Camiseta", proveedor: "P", modelo: "M", talla: "M", color: "Negro", costeCent: 235, coste: 2.35 });
+    expect(productos[0]).toEqual({ id: "1", tipo: "Camiseta", proveedor: "P", modelo: "M", talla: "M", color: "Negro", costeCent: 235, coste: 2.35, precioNeto: null, ivaPorcentaje: null });
+    // Exact cost from net price + VAT (four decimals, not rounded to cents)
+    const exacta = crearClienteFalso({ tablas: { v_catalogo_plano: [{ id: 9, tipo: "Camiseta", proveedor: "P", modelo: "M", talla: "M", color: "Blanco", coste_cent: 303, coste: "3.025", precio_neto: "2.5000", iva_porcentaje: "21.00" }] } });
+    expect((await leerCatalogoSupabase(exacta))[0]).toMatchObject({ coste: 3.025, costeCent: 303, precioNeto: 2.5, ivaPorcentaje: 21 });
     expect(sb.llamadas).toEqual(["v_catalogo_plano:0-999", "v_catalogo_plano:1000-1999"]);
   });
 });

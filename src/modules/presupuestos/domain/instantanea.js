@@ -16,7 +16,7 @@ export const zonasIniciales = () => [
   { id: "trasera", nombre: "Trasera", colores: "0" },
 ];
 
-export const lineaVacia = () => ({ ...crearLinea(), precioManual: "", descripcion: "" });
+export const lineaVacia = () => ({ ...crearLinea(), tipo: "", precioManual: "", descripcion: "", productoId: "" });
 
 export const formularioVacio = (valoresParametros) => ({
   lineas: [lineaVacia()],
@@ -62,8 +62,9 @@ export const instantaneaCliente = (c) =>
 
 // Strips UI-only fields from the form before storing it
 const formularioParaGuardar = (f) => ({
-  lineas: f.lineas.map(({ id, tipo, proveedor, modelo, size, color, quantity, precioManual, descripcion }) => ({
+  lineas: f.lineas.map(({ id, tipo, proveedor, modelo, size, color, quantity, precioManual, descripcion, productoId }) => ({
     id, tipo, proveedor, modelo, size, color, quantity, precioManual: precioManual ?? "", descripcion: descripcion ?? "",
+    ...(productoId ? { productoId } : {}),
   })),
   zonas: f.zonas.map(({ id, nombre, colores }) => ({ id, nombre, colores })),
   minutosDiseno: f.minutosDiseno,

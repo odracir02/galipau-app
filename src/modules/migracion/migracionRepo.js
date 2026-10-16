@@ -16,7 +16,7 @@ export const presupuestosDeImportacion = async (sb, importacionId) =>
 
 export const catalogoActual = async (sb) =>
   leerTodo((desde, hasta) =>
-    sb.from("v_catalogo_plano").select("id, tipo, proveedor, modelo, talla, color, coste_cent").order("id").range(desde, hasta)
+    sb.from("v_catalogo_plano").select("id, tipo, proveedor, modelo, talla, color, coste_cent, coste, precio_neto, iva_porcentaje").order("id").range(desde, hasta)
   );
 
 export const importarHistorial = async (sb, registros, resumen) =>
@@ -29,3 +29,11 @@ export const revertirImportacion = async (sb, id) => desenvolver(await sb.rpc("r
 
 export const listarImportaciones = async (sb) =>
   desenvolver(await sb.from("importaciones").select("id, tipo, creada_en, resumen, revertida_en").order("creada_en", { ascending: false }).limit(50)) ?? [];
+
+// Latest backup of each kind, to require a recent database backup before importing
+export const ultimasCopias = async (sb) => {
+  const filas = desenvolver(await sb.from("registro_copias").select("tipo, estado, creada_en").order("creada_en", { ascending: false }).limit(20)) ?? [];
+  const ultimas = {};
+  for (const f of filas) ultimas[f.tipo] ??= f;
+  return ultimas;
+};

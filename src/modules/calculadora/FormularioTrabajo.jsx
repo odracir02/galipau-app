@@ -1,8 +1,14 @@
-import LineaProducto from "../../components/LineaProducto";
-import { opcionesLinea } from "../../domain/catalogo";
-import { actualizarCampoLinea } from "../../domain/presupuestoEstado";
+import { useState } from "react";
+import { Link } from "react-router-dom";
+import { Search } from "lucide-react";
+import SelectorPrenda from "./SelectorPrenda";
+import { elegirEnPrenda } from "../../domain/catalogo";
 import { eurosDecimal, euros } from "../../shared/utils/dinero";
 import { lineaVacia } from "../presupuestos/domain/instantanea";
+
+// Unit garment price with up to four decimals (catalogue costs are net × 1.21)
+const PRECIO_UNIDAD = new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 4, useGrouping: "always" });
+const precioUnidad = (v) => PRECIO_UNIDAD.format(v);
 
 // Fields that do not change which catalogue product a line refers to
 const CAMPOS_LIBRES = new Set(["precioManual", "descripcion", "quantity"]);
@@ -18,6 +24,7 @@ function FormularioTrabajo({
   etiquetaPrecioFinal = "Precio final cobrado (€, opcional)", recomendadoCent = null,
 }) {
   const { lineas, zonas, minutosDiseno, mermaPorcentaje, precioFinal } = formulario;
+  const [busqueda, setBusqueda] = useState("");
   const cambiar = (campo, valor) => onChange((f) => ({ ...f, [campo]: valor }));
 
   const cambiarLinea = (id, campo, valor) =>
@@ -27,8 +34,7 @@ function FormularioTrabajo({
         if (l.id !== id) return l;
         if (CAMPOS_LIBRES.has(campo)) return { ...l, [campo]: valor };
         // Choosing another product drops the price saved with the quote
-        const { precioGuardado: _anterior, ...resto } = l;
-        return actualizarCampoLinea(resto, campo, valor);
+        return elegirEnPrenda(l, campo, valor, productos);
       }),
     }));
 
@@ -37,17 +43,30 @@ function FormularioTrabajo({
   return (
     <fieldset disabled={soloLectura}>
       <h3 className="gx-subtitulo">Prendas</h3>
+      {productos.length === 0 ? (
+        <div className="alert alert-info small py-2" role="note">
+          El catálogo de prendas está vacío: escribe el precio de cada prenda en «Precio manual». Para cargarlo, ve a{" "}
+          <Link to="/configuracion/migracion">Configuración → Importación y migración</Link>.
+        </div>
+      ) : (
+        <div className="input-group input-group-sm mb-2" style={{ maxWidth: 360 }}>
+          <span className="input-group-text"><Search size={14} aria-hidden="true" /></span>
+          <input aria-label="Buscar prenda en el catálogo" className="form-control" placeholder="Buscar proveedor o modelo…" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
+        </div>
+      )}
       {lineas.map((l, i) => {
         const d = detalle[i];
         const costeLinea = d && Number.isFinite(d.cantidad) && Number.isFinite(d.precioUnitario) ? d.cantidad * d.precioUnitario : null;
         return (
           <div key={l.id} className="border rounded p-2 mb-2 bg-light">
-            <LineaProducto
+            <SelectorPrenda
               linea={l}
               numero={i + 1}
-              opciones={opcionesLinea(productos, l)}
+              productos={productos}
+              busqueda={busqueda}
               puedeEliminar={lineas.length > 1 && !soloLectura}
-              onChange={(campo, valor) => cambiarLinea(l.id, campo, valor)}
+              onElegir={(campo, valor) => cambiarLinea(l.id, campo, valor)}
+              onCantidad={(valor) => cambiarLinea(l.id, "quantity", valor)}
               onRemove={() => onChange((f) => ({ ...f, lineas: f.lineas.filter((x) => x.id !== l.id) }))}
             />
             <div className="row g-2 align-items-center">
@@ -67,7 +86,7 @@ function FormularioTrabajo({
               )}
               {costeLinea !== null && (
                 <div className="col-12 small text-muted" data-testid={`coste-linea-${i + 1}`}>
-                  Coste de prendas de la línea: {d.cantidad} × {eurosDecimal(d.precioUnitario)} = <strong>{eurosDecimal(costeLinea)}</strong>
+                  Coste de prendas de la línea: {d.cantidad} × {precioUnidad(d.precioUnitario)} = <strong>{eurosDecimal(costeLinea)}</strong>
                   {d.origen === "manual" ? " (precio manual)" : d.origen === "guardado" ? " (precio guardado en el presupuesto)" : ""}
                 </div>
               )}

@@ -1,11 +1,11 @@
 // Builds the real-cost engine input from the calculator form.
 
-import { resolverCostePrenda } from "../../domain/catalogo";
+import { resolverCostePrenda, productoPorId } from "../../domain/catalogo";
 import { leerNumero } from "../../shared/utils/dinero";
 
 // Text shown to the customer for a line (free text wins over catalogue fields)
 export const describirLinea = (l) =>
-  (l.descripcion ?? "").trim() || [l.tipo, l.proveedor, l.modelo].filter(Boolean).join(" ");
+  (l.descripcion ?? "").trim() || [l.tipo, l.proveedor, l.modelo].filter(Boolean).join(" ") || "Prenda";
 
 /**
  * Price used for each line, in order: manual price, the price saved with the
@@ -19,7 +19,11 @@ export const construirEntrada = ({ lineas, productos, zonas, minutosDiseno, merm
   const detalle = lineas.map((l, i) => {
     const cantidad = leerNumero(l.quantity);
     const manual = leerNumero(l.precioManual);
-    const catalogo = resolverCostePrenda(productos, l);
+    // Lines chosen with the exact selector carry the product id; older lines use the colour group
+    const exacto = l.productoId ? productoPorId(productos, l.productoId) : null;
+    const catalogo = l.productoId
+      ? { encontrado: Boolean(exacto), coste: exacto ? Number(exacto.coste) : 0, costesDistintos: false }
+      : resolverCostePrenda(productos, l);
     let precioUnitario;
     let origen;
     if (manual !== null) {
@@ -32,7 +36,11 @@ export const construirEntrada = ({ lineas, productos, zonas, minutosDiseno, merm
         preciosCambiados.push({ linea: i + 1, guardado: l.precioGuardado, actual: catalogo.coste });
       }
     } else {
-      if (!catalogo.encontrado) problemas.push(`Línea ${i + 1}: elige una prenda del catálogo o indica un precio manual.`);
+      if (!catalogo.encontrado) {
+        problemas.push(l.productoId
+          ? `Línea ${i + 1}: la prenda ya no está en el catálogo; vuelve a elegirla o indica un precio manual.`
+          : `Línea ${i + 1}: elige una prenda del catálogo o indica un precio manual.`);
+      }
       else if (catalogo.costesDistintos) problemas.push(`Línea ${i + 1}: hay colores con costes distintos en el grupo «${l.color}»; se usa el primero.`);
       precioUnitario = catalogo.encontrado ? catalogo.coste : NaN;
       origen = "catalogo";
