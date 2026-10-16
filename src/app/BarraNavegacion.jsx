@@ -10,8 +10,10 @@ function BarraNavegacion() {
       <span className="navbar-brand">Galipau App</span>
       <div className="navbar-nav flex-wrap">
         <NavLink to="/" end className={enlace}>Presupuesto</NavLink>
+        <NavLink to="/costes" className={enlace}>Calculadora de costes</NavLink>
         <NavLink to="/historial" className={enlace}>Historial</NavLink>
         <NavLink to="/copias" className={enlace}>Copias de seguridad</NavLink>
+        <NavLink to="/parametros" className={enlace}>Parámetros</NavLink>
       </div>
       <button type="button" className="btn btn-sm btn-outline-secondary ms-auto" onClick={cerrarSesion}>
         Cerrar sesión

@@ -6,6 +6,8 @@ import BarraNavegacion from "./app/BarraNavegacion";
 import PiePagina from "./app/PiePagina";
 import PaginaCopias from "./modules/copias/PaginaCopias";
 import PaginaCopiasNube from "./modules/copias/PaginaCopiasNube";
+import PaginaCalculadoraSerigrafia from "./modules/calculadora/PaginaCalculadoraSerigrafia";
+import PaginaParametros from "./modules/calculadora/PaginaParametros";
 import { backendActivo } from "./app/backend";
 
 function App({ servicioSesion }) {
@@ -18,6 +20,8 @@ function App({ servicioSesion }) {
           <Routes>
             <Route path="/" element={<QuoteForm />} />
             <Route path="/historial" element={<BudgetHistory />} />
+            <Route path="/costes" element={<PaginaCalculadoraSerigrafia />} />
+            <Route path="/parametros" element={<PaginaParametros />} />
             <Route path="/copias" element={nube ? <PaginaCopiasNube /> : <PaginaCopias />} />
           </Routes>
         </main>

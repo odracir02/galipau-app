@@ -7,6 +7,8 @@ Galipau App is a single-owner web application. It is moving to a **cloud deploym
 ## ✨ Features
 
 - Quote calculator for DTF and screen printing (multiple blocks and lines, live validation)
+- **Real-cost calculator for screen printing**: garments with waste, consumables, electricity, machinery reserve and labour, with a readable cost breakdown, recommended price and margin
+- **Versioned pricing parameters** editable from the app (each change creates a new version; previous versions are kept)
 - Customers API (create, edit, search, archive)
 - Product catalogue (suppliers → models → variants), costs stored as integer cents
 - Single-owner authentication (scrypt password hashing, server-side sessions, brute-force protection)
