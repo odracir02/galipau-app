@@ -109,7 +109,7 @@ export const construirDocumento = (p, empresa = {}) => {
     idioma,
     titulo: t.titulo,
     borrador: numero ? null : t.borrador,
-    referencia: unir([numero ? `${t.numero} ${numero}` : t.borrador, fecha(p.fecha_emision)], "   "),
+    referencia: unir([numero ? `${t.numero} ${numero}` : "", fecha(p.fecha_emision)], "   "), // a draft shows only the date (it is labelled below)
     validoHasta: p.valido_hasta ? `${t.validoHasta}: ${fecha(p.valido_hasta)}` : null,
     emisor: {
       nombre: nombreEmpresa.toUpperCase(),

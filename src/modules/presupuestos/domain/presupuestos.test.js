@@ -181,6 +181,7 @@ describe("documento para el cliente", () => {
   it("borrador sin número", () => {
     const doc = construirDocumento(registroFicticio({ numero: null, estado: "borrador" }), EMPRESA);
     expect(doc.borrador).toBe("ESBORRANY");
+    expect(doc.referencia).toBe("17/10/2026");
     expect(doc.nombreArchivo).toBe("Pressupost_ESBORRANY_Galipau_Arts.pdf");
   });
 
