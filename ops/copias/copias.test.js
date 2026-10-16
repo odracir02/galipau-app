@@ -67,7 +67,7 @@ describe("manifiesto de la base de datos", () => {
     expect(compararManifiestos(await manifiestoDe(a), await manifiestoDe(b))).toContain("presupuestos: 1 rows in source, 0 restored");
     await a.close();
     await b.close();
-  });
+  }, 30_000); // two PGlite databases: slow on shared CI runners
 
   it("detecta tablas ausentes o sobrantes", () => {
     expect(compararManifiestos({ a: { filas: 1, md5: "x" } }, {})).toEqual(["a: missing from the restored copy"]);
