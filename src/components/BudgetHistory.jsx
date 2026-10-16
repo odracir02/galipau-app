@@ -1,4 +1,15 @@
 import { useState } from "react";
+
+// Downloads the stored history exactly as it is (read-only), for the controlled migration
+const exportarHistorial = (presupuestos) => {
+  const blob = new Blob([JSON.stringify(presupuestos, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const enlace = document.createElement("a");
+  enlace.href = url;
+  enlace.download = `historial-presupuestos-${new Date().toISOString().slice(0, 10)}.json`;
+  enlace.click();
+  URL.revokeObjectURL(url);
+};
 import { Link } from "react-router-dom";
 import {
   leerHistorial,
@@ -60,6 +71,11 @@ function BudgetHistory() {
       <Link to="/" className="btn btn-secondary mt-3">
         ← Volver al formulario
       </Link>
+      {presupuestos.length > 0 && (
+        <button type="button" className="btn btn-outline-secondary mt-3 ms-2" onClick={() => exportarHistorial(presupuestos)}>
+          Exportar historial (archivo JSON)
+        </button>
+      )}
     </div>
   );
 }

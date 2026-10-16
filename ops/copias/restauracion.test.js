@@ -18,11 +18,13 @@ beforeAll(async () => {
   await origen.exec(fs.readFileSync(new URL("../../supabase/datos-ficticios.sql", import.meta.url), "utf8"));
   await comoPropietario(origen, async (tx) => {
     const cliente = (await tx.query("select id from public.clientes order by id limit 1")).rows[0].id;
-    const numero = (await tx.query("select public.siguiente_numero('P', 2026) n")).rows[0].n;
-    await tx.query(
-      "insert into public.presupuestos (numero, cliente_id, cliente_nombre, motor, entrada, resultado, total_cent, fecha_emision, valido_hasta, notas) values ($1, $2, 'Club Deportivo Ficticio', 'legacy', $3, $4, 3390, '2026-10-15', '2026-11-15', 'Comillas '' y tildes: camión, ñ')",
-      [numero, cliente, JSON.stringify({ bloques: [{ estampado: "DTF", area: "300" }] }), JSON.stringify({ total: 33.9 })]
-    );
+    const { id } = (await tx.query(
+      "insert into public.presupuestos (cliente_id, cliente_nombre, motor, entrada, resultado, total_cent, precio_final_cent, fecha_emision, valido_hasta, notas) values ($1, 'Club Deportivo Ficticio', 'legacy', $2, $3, 3390, 3390, '2026-10-15', '2026-11-15', 'Comillas '' y tildes: camión, ñ') returning id",
+      [cliente, JSON.stringify({ bloques: [{ estampado: "DTF", area: "300" }] }), JSON.stringify({ total: 33.9 })]
+    )).rows[0];
+    // Presented and accepted: number, version and state log are set by the database and must survive the restore
+    await tx.query("update public.presupuestos set estado = 'presentado' where id = $1", [id]);
+    await tx.query("update public.presupuestos set estado = 'aceptado' where id = $1", [id]);
   });
   await origen.exec("insert into public.registro_copias (tipo, estado, detalle) values ('base_datos', 'correcta', '{\"prueba\": true}')");
 
@@ -43,8 +45,8 @@ afterAll(async () => {
 describe("volcado", () => {
   it("contiene la estructura, la seguridad y los datos esperados", () => {
     expect(copia.esquema).toMatch(/CREATE TABLE public\.presupuestos/);
-    expect((copia.esquema.match(/ENABLE ROW LEVEL SECURITY/g) ?? []).length).toBe(10);
-    expect((copia.esquema.match(/CREATE POLICY/g) ?? []).length).toBe(12);
+    expect((copia.esquema.match(/ENABLE ROW LEVEL SECURITY/g) ?? []).length).toBe(11);
+    expect((copia.esquema.match(/CREATE POLICY/g) ?? []).length).toBe(18);
     expect((copia.datos.match(/^INSERT INTO public\.variantes/gm) ?? []).length).toBe(36);
     expect(copia.datos).toMatch(/OVERRIDING SYSTEM VALUE/);
     expect(copia.datos).toMatch(/setval\('public\.clientes_id_seq'/);
@@ -90,8 +92,17 @@ describe("restauración en una base de datos aislada", () => {
     const id = (await db.query("insert into public.clientes (nombre) values ('Nuevo tras restaurar') returning id")).rows[0].id;
     const maxPrevio = Number((await origen.query("select max(id) m from public.clientes")).rows[0].m);
     expect(Number(id)).toBeGreaterThan(maxPrevio);
-    const { rows } = await db.query("select ultimo from public.contadores where serie = 'P' and anio = 2026");
+    const { rows } = await db.query("select ultimo from public.contadores where serie = 'PRES' and anio = 2026");
     expect(rows[0].ultimo).toBe(1);
+    const restaurado = (await db.query("select numero, estado, version, jsonb_array_length(historial_estados) n from public.presupuestos")).rows[0];
+    expect(restaurado).toEqual({ numero: "2026/001", estado: "aceptado", version: 1, n: 3 });
+    // The next quote presented after the restore gets the next number
+    await db.exec("set row_security = on"); // the dump session turns it off
+    const siguiente = await comoPropietario(db, async (tx) => {
+      const { id: nuevo } = (await tx.query("insert into public.presupuestos (cliente_nombre, motor, entrada, resultado, total_cent, precio_final_cent, fecha_emision) values ('X', 'serigrafia-coste-real/2', '{}', '{}', 100, 100, '2026-10-20') returning id")).rows[0];
+      return (await tx.query("update public.presupuestos set estado = 'presentado' where id = $1 returning numero", [nuevo])).rows[0].numero;
+    });
+    expect(siguiente).toBe("2026/002");
     await db.close();
   });
 

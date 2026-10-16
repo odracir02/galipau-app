@@ -5,7 +5,7 @@ import { leerTodo } from "../../shared/supabase/paginar";
 export const fecha = (iso) => (iso ? new Date(iso).toLocaleString("es-ES") : "—");
 export const TIPOS = { base_datos: "Base de datos", archivos: "Archivos" };
 
-export const TABLAS_EXPORTACION = ["configuracion", "contadores", "clientes", "proveedores", "modelos", "variantes", "presupuestos"];
+export const TABLAS_EXPORTACION = ["configuracion", "contadores", "parametros_calculo", "importaciones", "clientes", "proveedores", "modelos", "variantes", "presupuestos"];
 export const HORAS_AVISO = 48;
 
 export const avisosCopias = (ultimas, ahora = Date.now()) => {

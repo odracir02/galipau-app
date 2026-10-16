@@ -19,10 +19,10 @@ const insertarCliente = (tx, datos = {}) =>
 
 describe("migraciones", () => {
   it("se aplican en orden y crean el esquema esperado", async () => {
-    expect(listarMigraciones()).toEqual(["20261015120000_esquema_inicial.sql", "20261015120100_almacenamiento.sql", "20261016090000_parametros_calculo.sql"]);
+    expect(listarMigraciones()).toEqual(["20261015120000_esquema_inicial.sql", "20261015120100_almacenamiento.sql", "20261016090000_parametros_calculo.sql", "20261017090000_presupuestos_ciclo_vida.sql"]);
     const { rows } = await db.query("select tablename from pg_tables where schemaname = 'public' order by tablename");
     expect(rows.map((r) => r.tablename)).toEqual([
-      "clientes", "configuracion", "contadores", "modelos", "parametros_calculo", "presupuestos", "propietario", "proveedores", "registro_copias", "variantes",
+      "clientes", "configuracion", "contadores", "importaciones", "modelos", "parametros_calculo", "presupuestos", "propietario", "proveedores", "registro_copias", "variantes",
     ]);
   });
 
@@ -72,8 +72,8 @@ describe("restricciones de integridad", () => {
   it("claves foráneas: ni clientes inexistentes ni borrar uno en uso", async () => {
     const crearPresupuesto = (tx, clienteId) =>
       tx.query(
-        "insert into public.presupuestos (numero, cliente_id, cliente_nombre, motor, entrada, total_cent) values ($1, $2, 'C', 'legacy', '{}', 100)",
-        [`T-${Math.random()}`, clienteId]
+        "insert into public.presupuestos (cliente_id, cliente_nombre, motor, entrada, total_cent) values ($1, 'C', 'legacy', '{}', 100)",
+        [clienteId]
       );
     expect(await codigoError(() => comoPropietario(db, (tx) => crearPresupuesto(tx, 999999)))).toBe("23503");
     expect(
@@ -93,7 +93,7 @@ describe("restricciones de integridad", () => {
     expect(
       await codigoError(() =>
         comoPropietario(db, (tx) =>
-          tx.query("insert into public.presupuestos (numero, cliente_nombre, motor, entrada, total_cent) values ('N1', 'C', 'legacy', '{}', -1)")
+          tx.query("insert into public.presupuestos (cliente_nombre, motor, entrada, total_cent) values ('C', 'legacy', '{}', -1)")
         )
       )
     ).toBe("23514");
@@ -103,8 +103,8 @@ describe("restricciones de integridad", () => {
     const insertar = (fecha, hasta) =>
       comoPropietario(db, (tx) =>
         tx.query(
-          "insert into public.presupuestos (numero, cliente_nombre, motor, entrada, total_cent, fecha_emision, valido_hasta) values ($1, 'C', 'legacy', '{}', 0, $2, $3)",
-          [`F-${Math.random()}`, fecha, hasta]
+          "insert into public.presupuestos (cliente_nombre, motor, entrada, total_cent, fecha_emision, valido_hasta) values ('C', 'legacy', '{}', 0, $1, $2)",
+          [fecha, hasta]
         )
       );
     expect(await codigoError(() => insertar("2026-02-30", null))).toBe("22008");

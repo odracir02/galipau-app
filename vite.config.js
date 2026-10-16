@@ -39,5 +39,9 @@ export default defineConfig(({ mode }) => {
     host: '127.0.0.1',
     open: true,
   },
+  test: {
+    // Database tests start a real PostgreSQL (PGlite) per test: slower on shared CI runners
+    testTimeout: 20000,
+  },
   }
 })

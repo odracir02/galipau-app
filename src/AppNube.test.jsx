@@ -39,7 +39,9 @@ describe("App en la nube — acceso", () => {
     await user.type(screen.getByLabelText("Email"), PROPIETARIO.email);
     await user.type(screen.getByLabelText("Contraseña"), PROPIETARIO.password);
     await user.click(screen.getByRole("button", { name: "Entrar" }));
-    expect(await screen.findByRole("heading", { name: "Generar presupuesto" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Presupuestos" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "+ Nuevo presupuesto" }).getAttribute("href")).toBe("/presupuestos/nuevo");
+    expect(screen.getByRole("link", { name: "Versión antigua" }).getAttribute("href")).toBe("/antiguo");
     expect(screen.getByRole("contentinfo").textContent).toBe("Galipau Arts · Galipau App");
   });
 
@@ -50,7 +52,7 @@ describe("App en la nube — acceso", () => {
     await user.type(screen.getByLabelText("Contraseña"), OTRO.password);
     await user.click(screen.getByRole("button", { name: "Entrar" }));
     expect(await screen.findByText("Esta cuenta no tiene acceso a Galipau App.")).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "Generar presupuesto" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Presupuestos" })).toBeNull();
   });
 
   it("contraseña incorrecta y campos vacíos", async () => {
@@ -88,7 +90,7 @@ describe("copias en la nube", () => {
     expect(datos.exportadoEn).toBe("2026-10-15T00:00:00.000Z");
     expect(datos.tablas.clientes).toHaveLength(1200);
     expect(datos.tablas.configuracion).toHaveLength(1);
-    expect(Object.keys(datos.tablas)).toEqual(["configuracion", "contadores", "clientes", "proveedores", "modelos", "variantes", "presupuestos"]);
+    expect(Object.keys(datos.tablas)).toEqual(["configuracion", "contadores", "parametros_calculo", "importaciones", "clientes", "proveedores", "modelos", "variantes", "presupuestos"]);
   });
 
   it("la página muestra el estado de las copias y descarga la exportación", async () => {

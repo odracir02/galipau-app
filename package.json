@@ -12,7 +12,9 @@
     "start": "node --env-file-if-exists=.env server/index.js",
     "db:ejemplo": "node --env-file-if-exists=.env server/scripts/datos-ejemplo.js",
     "copias": "node --env-file-if-exists=.env server/scripts/copias.js",
-    "contrasena:restablecer": "node --env-file-if-exists=.env server/scripts/restablecer-contrasena.js"
+    "contrasena:restablecer": "node --env-file-if-exists=.env server/scripts/restablecer-contrasena.js",
+    "sql:instalacion": "node ops/produccion/generar-instalacion.mjs",
+    "verificar:nube": "node ops/produccion/verificar.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.2",
@@ -20,6 +22,7 @@
     "bootstrap": "^5.3.7",
     "express": "^5.1.0",
     "firebase": "^11.10.0",
+    "jspdf": "4.2.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-router-dom": "^7.6.3"
