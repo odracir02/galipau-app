@@ -1,6 +1,7 @@
 // Money formatting for the UI (amounts are handled in integer cents).
 
-const FORMATO = new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// useGrouping "always": 1.720,00 € (es-ES only groups from five digits by default)
+const FORMATO = new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: "always" });
 const PORCENTAJE = new Intl.NumberFormat("es-ES", { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 export const euros = (cent) => (cent === null || cent === undefined ? "—" : FORMATO.format(cent / 100));

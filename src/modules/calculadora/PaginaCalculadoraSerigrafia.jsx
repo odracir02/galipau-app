@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { FilePlus2, SlidersHorizontal } from "lucide-react";
 import DesgloseCostes from "./DesgloseCostes";
+import ResumenCalculo from "./ResumenCalculo";
+import Cabecera from "../../shared/ui/Cabecera";
+import Cargando from "../../shared/ui/Cargando";
+import Aviso from "../../shared/ui/Aviso";
+import EstadoVacio from "../../shared/ui/EstadoVacio";
 import FormularioTrabajo from "./FormularioTrabajo";
 import { useCalculoSerigrafia } from "./useCalculoSerigrafia";
 import { cargarParametrosActivos } from "./parametrosRepo";
@@ -56,68 +62,75 @@ function PaginaCalculadoraSerigrafia({ obtenerCliente = obtenerClienteSupabase, 
     }
   }, [comparar, resultado, formulario, productos]);
 
+  const titulo = "Calculadora de costes";
   if (!nube) {
     return (
-      <div className="container mt-4">
-        <h2>Calculadora de costes — serigrafía</h2>
-        <div className="alert alert-info">La calculadora de costes usa los parámetros guardados en la nube. Está disponible en la versión en la nube de Galipau App.</div>
-      </div>
+      <>
+        <Cabecera titulo={titulo} />
+        <Aviso tipo="info">La calculadora de costes usa los parámetros guardados en la nube. Está disponible en la versión en la nube de Galipau App.</Aviso>
+      </>
     );
   }
-  if (error) return <div className="container mt-4"><div className="alert alert-danger" role="alert">{error}</div></div>;
-  if (parametros === undefined) return <div className="container mt-4" role="status">Cargando parámetros…</div>;
+  if (error) return <Aviso tipo="danger">{error}</Aviso>;
+  if (parametros === undefined) return <Cargando texto="Cargando parámetros…" />;
   if (parametros === null) {
     return (
-      <div className="container mt-4">
-        <h2>Calculadora de costes — serigrafía</h2>
-        <div className="alert alert-warning" role="alert">
-          Todavía no hay parámetros de cálculo. Créalos o impórtalos en <Link to="/parametros">Parámetros</Link>.
+      <>
+        <Cabecera titulo={titulo} />
+        <div className="gx-tarjeta">
+          <EstadoVacio icono={SlidersHorizontal} titulo="Faltan los parámetros de cálculo"
+            accion={<Link className="btn btn-primary" to="/configuracion/parametros">Ir a Parámetros</Link>}>
+            <span role="alert">Todavía no hay parámetros de cálculo. Créalos o impórtalos en <Link to="/configuracion/parametros">Parámetros</Link>.</span>
+          </EstadoVacio>
         </div>
-      </div>
+      </>
     );
   }
 
   const mostrarAvisos = formulario.lineas.some((l) => l.quantity !== "" || l.proveedor !== "");
 
   return (
-    <div className="container mt-4">
-      <h2 className="mb-1">Calculadora de costes — serigrafía</h2>
-      <p className="text-muted">
-        Coste real del trabajo según los parámetros vigentes (versión {parametros.version}). El cálculo se actualiza al escribir. Para guardarlo como presupuesto, usa{" "}
-        <Link to="/presupuestos/nuevo">Nuevo presupuesto</Link>.
-      </p>
-
-      <FormularioTrabajo formulario={formulario} onChange={setFormulario} productos={productos} detalle={detalle} />
-
-      {mostrarAvisos && (problemas.length > 0 || erroresEntrada.length > 0) && (
-        <div className="alert alert-warning small" role="alert">
-          <ul className="mb-0">{[...new Set([...problemas, ...erroresEntrada])].map((p) => <li key={p}>{p}</li>)}</ul>
-        </div>
-      )}
-
-      {resultado && (
-        <>
-          {parametros.valores.redondeoPrecioUnidad == null && (
+    <>
+      <Cabecera titulo={titulo} descripcion={`Coste real de un trabajo de serigrafía con los parámetros vigentes (versión ${parametros.version}). No se guarda nada.`}
+        acciones={<Link to="/presupuestos/nuevo" className="btn btn-outline-primary btn-icono"><FilePlus2 size={16} aria-hidden="true" />Crear presupuesto</Link>} />
+      <div className="row g-4">
+        <div className="col-xl-8">
+          <div className="gx-tarjeta">
+            <FormularioTrabajo formulario={formulario} onChange={setFormulario} productos={productos} detalle={detalle} />
+          </div>
+          {mostrarAvisos && (problemas.length > 0 || erroresEntrada.length > 0) && (
+            <div className="alert alert-warning small mt-3" role="alert">
+              <ul className="mb-0">{[...new Set([...problemas, ...erroresEntrada])].map((p) => <li key={p}>{p}</li>)}</ul>
+            </div>
+          )}
+          {resultado && parametros.valores.redondeoPrecioUnidad == null && (
             <div className="alert alert-info small mt-3 mb-0" role="note">
               La versión {parametros.version} de los parámetros no incluye el redondeo del precio recomendado. Para activarlo, guarda una nueva versión en{" "}
-              <Link to="/parametros">Parámetros</Link> (el campo viene relleno con 0,5 €).
+              <Link to="/configuracion/parametros">Parámetros</Link> (el campo viene relleno con 0,5 €).
             </div>
           )}
-          <DesgloseCostes resultado={resultado} parametrosVersion={parametros.version} />
-          <div className="form-check mt-2">
-            <input id="comparar" type="checkbox" className="form-check-input" checked={comparar} onChange={(e) => setComparar(e.target.checked)} />
-            <label className="form-check-label small" htmlFor="comparar">Comparar con el motor antiguo (tarifas)</label>
-          </div>
-          {comparar && (
-            <div className="alert alert-light border small mt-2" role="note">
-              {legacy
-                ? `Motor antiguo: total ${euros(Math.round(legacy.total * 100))} (descuento ${legacy.descuentoPorcentaje} %). Su «beneficio» (${euros(Math.round(legacy.beneficioTotal * 100))}) no descuenta materiales ni mano de obra y no es comparable.`
-                : "El motor antiguo necesita prendas del catálogo (sin precios manuales)."}
-            </div>
+          {resultado && (
+            <>
+              <DesgloseCostes resultado={resultado} />
+              <div className="form-check mt-3">
+                <input id="comparar" type="checkbox" className="form-check-input" checked={comparar} onChange={(e) => setComparar(e.target.checked)} />
+                <label className="form-check-label small" htmlFor="comparar">Comparar con el motor antiguo (tarifas)</label>
+              </div>
+              {comparar && (
+                <div className="alert alert-light border small mt-2" role="note">
+                  {legacy
+                    ? `Motor antiguo: total ${euros(Math.round(legacy.total * 100))} (descuento ${legacy.descuentoPorcentaje} %). Su «beneficio» (${euros(Math.round(legacy.beneficioTotal * 100))}) no descuenta materiales ni mano de obra y no es comparable.`
+                    : "El motor antiguo necesita prendas del catálogo (sin precios manuales)."}
+                </div>
+              )}
+            </>
           )}
-        </>
-      )}
-    </div>
+        </div>
+        <div className="col-xl-4">
+          <ResumenCalculo resultado={resultado} parametrosVersion={parametros.version} />
+        </div>
+      </div>
+    </>
   );
 }
 

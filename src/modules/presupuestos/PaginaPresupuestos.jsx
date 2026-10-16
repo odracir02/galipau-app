@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+import { FilePlus2, FileText } from "lucide-react";
+import Cabecera from "../../shared/ui/Cabecera";
+import Cargando from "../../shared/ui/Cargando";
+import Aviso from "../../shared/ui/Aviso";
+import EstadoVacio from "../../shared/ui/EstadoVacio";
 import { obtenerClienteSupabase } from "../../shared/supabase/cliente";
 import { listarPresupuestos, obtenerPresupuesto } from "./data/presupuestosRepo";
 import { cargarEmpresa } from "../empresa/empresaRepo";
@@ -13,7 +18,8 @@ const fecha = (iso) => (iso ? iso.split("-").reverse().join("/") : "");
 
 /** Quote history with filters by customer, date and state. */
 function PaginaPresupuestos({ obtenerCliente = obtenerClienteSupabase, guardarPdf }) {
-  const [filtros, setFiltros] = useState(FILTROS_INICIALES);
+  const [busqueda] = useSearchParams();
+  const [filtros, setFiltros] = useState(() => ({ ...FILTROS_INICIALES, cliente: busqueda.get("cliente") ?? "" }));
   const [presupuestos, setPresupuestos] = useState(null);
   const [error, setError] = useState(null);
   const [mensaje, setMensaje] = useState(null);
@@ -48,13 +54,11 @@ function PaginaPresupuestos({ obtenerCliente = obtenerClienteSupabase, guardarPd
   const totalVisible = (presupuestos ?? []).filter((p) => p.estado !== "cancelado").reduce((s, p) => s + Number(p.total_cent), 0);
 
   return (
-    <div className="container mt-4">
-      <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
-        <h2 className="mb-0">Presupuestos</h2>
-        <Link to="/presupuestos/nuevo" className="btn btn-primary ms-auto">+ Nuevo presupuesto</Link>
-      </div>
+    <>
+      <Cabecera titulo="Presupuestos" descripcion="Historial completo, con filtros por cliente, estado y fecha."
+        acciones={<Link to="/presupuestos/nuevo" className="btn btn-primary btn-icono"><FilePlus2 size={16} aria-hidden="true" />Nuevo presupuesto</Link>} />
 
-      <form className="row g-2 mb-3" onSubmit={(e) => e.preventDefault()} aria-label="Filtros">
+      <form className="row g-2 mb-3 gx-tarjeta mx-0 py-3" onSubmit={(e) => e.preventDefault()} aria-label="Filtros">
         <div className="col-md-4">
           <label className="form-label small mb-0" htmlFor="filtro-cliente">Cliente</label>
           <input id="filtro-cliente" className="form-control form-control-sm" value={filtros.cliente} onChange={cambiar("cliente")} placeholder="Nombre del cliente" />
@@ -79,25 +83,36 @@ function PaginaPresupuestos({ obtenerCliente = obtenerClienteSupabase, guardarPd
         </div>
       </form>
 
-      {mensaje && <div className={`alert alert-${mensaje.tipo} py-2`} role={mensaje.tipo === "danger" ? "alert" : "status"}>{mensaje.texto}</div>}
-      {error && <div className="alert alert-danger" role="alert">{error}</div>}
+      {mensaje && <Aviso tipo={mensaje.tipo}>{mensaje.texto}</Aviso>}
+      {error && <Aviso tipo="danger">{error}</Aviso>}
       {presupuestos === null ? (
-        <div role="status">Cargando presupuestos…</div>
+        <Cargando texto="Cargando presupuestos…" />
       ) : presupuestos.length === 0 ? (
-        <p className="text-muted">No hay presupuestos{Object.values(filtros).some(Boolean) ? " con estos filtros" : ""}.</p>
+        <div className="gx-tabla">
+          {Object.values(filtros).some(Boolean) ? (
+            <EstadoVacio icono={FileText} titulo="No hay presupuestos con estos filtros"
+              accion={<button type="button" className="btn btn-outline-secondary" onClick={() => setFiltros(FILTROS_INICIALES)}>Quitar filtros</button>} />
+          ) : (
+            <EstadoVacio icono={FileText} titulo="Todavía no hay presupuestos"
+              accion={<Link to="/presupuestos/nuevo" className="btn btn-primary">Crear el primero</Link>}>
+              Calcula el coste, elige el precio y genera el PDF para el cliente.
+            </EstadoVacio>
+          )}
+        </div>
       ) : (
+        <div className="gx-tabla">
         <div className="table-responsive">
-          <table className="table table-sm table-hover align-middle">
+          <table className="table table-hover align-middle">
             <thead>
-              <tr><th>Número</th><th>Fecha</th><th>Cliente</th><th>Estado</th><th className="text-end">Total</th><th className="text-end d-none d-md-table-cell">Beneficio</th><th /></tr>
+              <tr><th>Número</th><th className="d-none d-sm-table-cell">Fecha</th><th>Cliente</th><th className="d-none d-sm-table-cell">Estado</th><th className="text-end">Total</th><th className="text-end d-none d-md-table-cell">Beneficio</th><th /></tr>
             </thead>
             <tbody>
               {presupuestos.map((p) => (
                 <tr key={p.id}>
-                  <td>{p.numero ?? <span className="text-muted">—</span>}</td>
-                  <td>{fecha(p.fecha_emision)}</td>
-                  <td>{p.cliente_nombre}</td>
-                  <td><InsigniaEstado estado={p.estado} /></td>
+                  <td className="fw-semibold">{p.numero ?? <span className="text-muted fw-normal">Borrador</span>}</td>
+                  <td className="d-none d-sm-table-cell">{fecha(p.fecha_emision)}</td>
+                  <td>{p.cliente_nombre}<div className="d-sm-none mt-1"><InsigniaEstado estado={p.estado} /></div></td>
+                  <td className="d-none d-sm-table-cell"><InsigniaEstado estado={p.estado} /></td>
                   <td className="text-end">{euros(Number(p.total_cent))}{p.precio_final_cent === null && p.estado !== "importado" ? <span className="text-muted small"> (rec.)</span> : ""}</td>
                   <td className={`text-end d-none d-md-table-cell ${Number(p.beneficio_cent) < 0 ? "text-danger" : ""}`}>{p.beneficio_cent === null ? "—" : euros(Number(p.beneficio_cent))}</td>
                   <td className="text-end text-nowrap">
@@ -111,10 +126,11 @@ function PaginaPresupuestos({ obtenerCliente = obtenerClienteSupabase, guardarPd
               ))}
             </tbody>
           </table>
-          <div className="small text-muted">{presupuestos.length} presupuesto(s) · total sin cancelados {euros(totalVisible)}{presupuestos.length >= 200 ? " · se muestran los 200 más recientes: usa los filtros" : ""}</div>
+        </div>
+          <div className="small text-muted px-3 py-2 border-top">{presupuestos.length} presupuesto(s) · total sin cancelados {euros(totalVisible)}{presupuestos.length >= 200 ? " · se muestran los 200 más recientes: usa los filtros" : ""}</div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 

@@ -1,4 +1,21 @@
 import { useState } from "react";
+import { MARCA } from "../marca";
+
+// Centred card shared by the access states
+const Marco = ({ children }) => (
+  <div className="gx-acceso">
+    <div className="gx-acceso-tarjeta">
+      <div className="d-flex align-items-center gap-3 mb-3">
+        <img src={MARCA.logo} alt="" />
+        <div>
+          <h1 className="h4 mb-0">{MARCA.producto}</h1>
+          <div className="small text-muted">{MARCA.descripcion}</div>
+        </div>
+      </div>
+      {children}
+    </div>
+  </div>
+);
 
 const MIN_LONGITUD = 8;
 
@@ -32,18 +49,16 @@ function PantallaAcceso({ servicio, configurado, accesoLocal, aviso, alEntrar })
 
   if (creando && !accesoLocal) {
     return (
-      <div className="container mt-5" style={{ maxWidth: 480 }}>
-        <h2 className="mb-3">Galipau App</h2>
+      <Marco>
         <div className="alert alert-warning" role="alert">
           Todavía no se ha creado la contraseña. Ábrela por primera vez desde el propio PC para configurarla.
         </div>
-      </div>
+      </Marco>
     );
   }
 
   return (
-    <div className="container mt-5" style={{ maxWidth: 480 }}>
-      <h2 className="mb-1">Galipau App</h2>
+    <Marco>
       <p className="text-muted">
         {creando ? "Primer uso: crea la contraseña de acceso." : nube ? "Accede con tu cuenta privada." : "Introduce tu contraseña para continuar."}
       </p>
@@ -92,11 +107,12 @@ function PantallaAcceso({ servicio, configurado, accesoLocal, aviso, alEntrar })
           </div>
         )}
         {error && <div className="alert alert-danger" role="alert">{error}</div>}
-        <button type="submit" className="btn btn-primary" disabled={enviando}>
+        <button type="submit" className="btn btn-primary w-100 py-2" disabled={enviando}>
+          {enviando && <span className="spinner-border spinner-border-sm me-2" aria-hidden="true" />}
           {creando ? "Crear contraseña y entrar" : "Entrar"}
         </button>
       </form>
-    </div>
+    </Marco>
   );
 }
 

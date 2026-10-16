@@ -122,6 +122,7 @@ describe("App — acceso", () => {
   it("si la sesión caduca, una petición 401 devuelve al acceso", async () => {
     const user = userEvent.setup();
     arrancar();
+    await user.click(await screen.findByRole("link", { name: "Configuración" }));
     await user.click(await screen.findByRole("link", { name: "Copias de seguridad" }));
     await screen.findByRole("heading", { name: "Copias de seguridad" });
     apiFalsa.estado.autenticado = false; // session expired on the server

@@ -15,6 +15,11 @@ import { IDIOMAS } from "./domain/documento";
 import { descargarPdfPresupuesto } from "./descargarPdf";
 import { euros, eurosDecimal } from "../../shared/utils/dinero";
 import InsigniaEstado from "./InsigniaEstado";
+import { ArrowLeft } from "lucide-react";
+import ResumenCalculo from "../calculadora/ResumenCalculo";
+import Aviso from "../../shared/ui/Aviso";
+import Cargando from "../../shared/ui/Cargando";
+import { useConfirmar } from "../../shared/ui/contextoDialogos";
 
 const fechaHora = (iso) => (iso ? new Date(iso).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" }) : "");
 
@@ -24,6 +29,7 @@ function PaginaEditorPresupuesto({ obtenerCliente = obtenerClienteSupabase, carg
   const [busqueda] = useSearchParams();
   const duplicarDe = busqueda.get("duplicar");
   const navigate = useNavigate();
+  const confirmar = useConfirmar();
 
   const [sb, setSb] = useState(null);
   const [cargado, setCargado] = useState(false);
@@ -112,7 +118,7 @@ function PaginaEditorPresupuesto({ obtenerCliente = obtenerClienteSupabase, carg
   const cambiarFormulario = modificar(setFormulario);
   const cambiarDocumento = (campo) => (e) => modificar(setDocumento)((d) => ({ ...d, [campo]: e.target.value }));
 
-  if (!cargado) return <div className="container mt-4" role="status">Cargando presupuesto…</div>;
+  if (!cargado) return <Cargando texto="Cargando presupuesto…" />;
   if (error) {
     return (
       <div className="container mt-4">
@@ -124,7 +130,7 @@ function PaginaEditorPresupuesto({ obtenerCliente = obtenerClienteSupabase, carg
   if (!activos && !parametros) {
     return (
       <div className="container mt-4">
-        <div className="alert alert-warning" role="alert">Todavía no hay parámetros de cálculo. Créalos en <Link to="/parametros">Parámetros</Link>.</div>
+        <div className="alert alert-warning" role="alert">Todavía no hay parámetros de cálculo. Créalos en <Link to="/configuracion/parametros">Parámetros</Link>.</div>
       </div>
     );
   }
@@ -182,7 +188,13 @@ function PaginaEditorPresupuesto({ obtenerCliente = obtenerClienteSupabase, carg
       setMensaje({ tipo: "danger", texto: `Antes de continuar: ${problemas.join(", ")}.` });
       return;
     }
-    if (hasta === "cancelado" && !window.confirm("¿Cancelar este presupuesto? Se conservará en el historial, pero no se podrá reactivar (sí duplicar).")) return;
+    if (hasta === "cancelado" && !(await confirmar({
+      titulo: "¿Cancelar este presupuesto?",
+      mensaje: "Se conservará en el historial, pero no se podrá reactivar. Si lo necesitas más adelante, podrás duplicarlo.",
+      aceptar: "Cancelar presupuesto",
+      cancelar: "Volver",
+      peligro: true,
+    }))) return;
     let actual = registro;
     if (!actual || (sucio && editable)) actual = await guardar({ navegar: false });
     if (!actual) return;
@@ -226,13 +238,16 @@ function PaginaEditorPresupuesto({ obtenerCliente = obtenerClienteSupabase, carg
   const titulo = registro?.numero ? `Presupuesto ${registro.numero}` : registro ? "Presupuesto (borrador)" : "Nuevo presupuesto";
 
   return (
-    <div className="container mt-4">
-      <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
-        <h2 className="mb-0 me-2">{titulo}</h2>
-        <InsigniaEstado estado={estado} />
-        {registro?.version > 1 && <span className="badge text-bg-light border">revisión {registro.version}</span>}
-        {sucio && <span className="badge text-bg-warning">Cambios sin guardar</span>}
-        <div className="ms-auto d-flex flex-wrap gap-2">
+    <>
+      <Link to="/presupuestos" className="small d-inline-flex align-items-center gap-1 mb-2"><ArrowLeft size={14} aria-hidden="true" />Presupuestos</Link>
+      <div className="gx-cabecera">
+        <div className="d-flex flex-wrap align-items-center gap-2">
+          <h1 className="me-1">{titulo}</h1>
+          <InsigniaEstado estado={estado} />
+          {registro?.version > 1 && <span className="gx-insignia gx-estado-importado">revisión {registro.version}</span>}
+          {sucio && <span className="gx-insignia gx-estado-en_produccion">Cambios sin guardar</span>}
+        </div>
+        <div className="gx-cabecera-acciones">
           {editable && (
             <button type="button" className="btn btn-primary" onClick={guardar} disabled={ocupado || (!sucio && registro)}>
               {registro ? "Guardar cambios" : "Guardar borrador"}
@@ -245,7 +260,7 @@ function PaginaEditorPresupuesto({ obtenerCliente = obtenerClienteSupabase, carg
         </div>
       </div>
 
-      {mensaje && <div className={`alert alert-${mensaje.tipo} py-2`} role={mensaje.tipo === "danger" ? "alert" : "status"}>{mensaje.texto}</div>}
+      {mensaje && <Aviso tipo={mensaje.tipo}>{mensaje.texto}</Aviso>}
 
       {(registro || estado === "borrador") && accionesDesde(estado).length > 0 && (
         <div className="d-flex flex-wrap gap-2 mb-3" aria-label="Cambiar estado">
@@ -260,6 +275,8 @@ function PaginaEditorPresupuesto({ obtenerCliente = obtenerClienteSupabase, carg
       )}
       {!editable && <div className="alert alert-light border small py-2">Este presupuesto está <strong>{ESTADOS[estado].etiqueta.toLowerCase()}</strong>: su contenido ya no se puede modificar (las notas internas sí). Para un cambio, duplícalo.</div>}
 
+      <div className="row g-4">
+      <div className="col-xl-8">
       <section className="card mb-3">
         <div className="card-body">
           <h4 className="h5">Cliente</h4>
@@ -291,7 +308,7 @@ function PaginaEditorPresupuesto({ obtenerCliente = obtenerClienteSupabase, carg
               <ul className="mb-0">{[...new Set([...calculo.problemas, ...calculo.erroresEntrada])].map((p) => <li key={p}>{p}</li>)}</ul>
             </div>
           )}
-          {calculo.resultado && <DesgloseCostes resultado={calculo.resultado} parametrosVersion={parametros?.version} />}
+          {calculo.resultado && <DesgloseCostes resultado={calculo.resultado} />}
           {comprobacion && !sucio && (
             <p className={`small ${comprobacion.coincide ? "text-success" : "text-danger"}`} data-testid="comprobacion">
               {comprobacion.coincide
@@ -370,8 +387,12 @@ function PaginaEditorPresupuesto({ obtenerCliente = obtenerClienteSupabase, carg
           )}
         </section>
       )}
-      <Link to="/presupuestos">← Volver a presupuestos</Link>
-    </div>
+      </div>
+      <div className="col-xl-4">
+        <ResumenCalculo resultado={calculo.resultado} parametrosVersion={parametros?.version} />
+      </div>
+      </div>
+    </>
   );
 }
 

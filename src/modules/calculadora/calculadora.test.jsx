@@ -128,7 +128,7 @@ describe("calculadora de costes de serigrafía", () => {
   it("sin parámetros invita a crearlos", async () => {
     renderCalculadora(crearSupabase([]).cliente);
     expect((await screen.findByRole("alert")).textContent).toMatch(/Todavía no hay parámetros/);
-    expect(screen.getByRole("link", { name: "Parámetros" }).getAttribute("href")).toBe("/parametros");
+    expect(screen.getByRole("link", { name: "Parámetros" }).getAttribute("href")).toBe("/configuracion/parametros");
   });
 });
 

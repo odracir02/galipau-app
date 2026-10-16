@@ -3,6 +3,8 @@ import { ContextoSesion } from "./contexto";
 import PantallaAcceso from "./PantallaAcceso";
 import { crearSesionLocal, crearSesionSupabase } from "./servicios";
 import { backendActivo } from "../backend";
+import { MARCA } from "../marca";
+import Cargando from "../../shared/ui/Cargando";
 
 const servicioPorDefecto = () => (backendActivo() === "supabase" ? crearSesionSupabase() : crearSesionLocal());
 
@@ -36,13 +38,15 @@ function ProveedorSesion({ children, servicio: servicioInyectado }) {
   const valor = useMemo(() => ({ ...estado, backend: servicio.tipo, cerrarSesion, comprobar }), [estado, servicio, cerrarSesion, comprobar]);
 
   if (estado.cargando) {
-    return <div className="container mt-5" role="status">Cargando Galipau App…</div>;
+    return <div className="gx-acceso"><Cargando texto={`Cargando ${MARCA.producto}…`} /></div>;
   }
   if (estado.error) {
     return (
-      <div className="container mt-5">
-        <div className="alert alert-danger" role="alert">{estado.error}</div>
-        <button type="button" className="btn btn-outline-secondary" onClick={comprobar}>Reintentar</button>
+      <div className="gx-acceso">
+        <div className="gx-acceso-tarjeta">
+          <div className="alert alert-danger" role="alert">{estado.error}</div>
+          <button type="button" className="btn btn-outline-secondary" onClick={comprobar}>Reintentar</button>
+        </div>
       </div>
     );
   }

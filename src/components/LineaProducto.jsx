@@ -16,7 +16,7 @@ function LineaProducto({
     `${base} ${camposConError.includes(campo) || productoInvalido ? "is-invalid" : ""}`;
 
   const desplegable = (campo, etiqueta, valores) => (
-    <div className="col-md-2">
+    <div className="col-6 col-md-4">
       <label className="form-label" htmlFor={`${id}-${campo}`}>{etiqueta}</label>
       <select
         id={`${id}-${campo}`}
@@ -38,7 +38,7 @@ function LineaProducto({
 
   return (
     <div className="row g-2 mb-2 align-items-end" role="group" aria-label={`Línea ${numero}`}>
-      <div className="col-md-2">
+      <div className="col-6 col-md-4">
         <label className="form-label" htmlFor={`${id}-tipo`}>Tipo</label>
         <select
           id={`${id}-tipo`}
@@ -58,7 +58,7 @@ function LineaProducto({
       {desplegable("size", "Talla", tallas)}
       {desplegable("color", "Color", colores)}
 
-      <div className="col-md-1">
+      <div className="col-4 col-md-2">
         <label className="form-label" htmlFor={`${id}-quantity`}>Cantidad</label>
         <input
           id={`${id}-quantity`}
@@ -73,7 +73,7 @@ function LineaProducto({
         />
       </div>
 
-      <div className="col-md-1">
+      <div className="col-2 col-md-1">
         {puedeEliminar && (
           <button
             type="button"

@@ -8,6 +8,7 @@ import {
 } from "./migracionRepo";
 import { euros } from "../../shared/utils/dinero";
 import { leerArchivoTexto } from "../calculadora/formularioParametros";
+import { useConfirmar } from "../../shared/ui/contextoDialogos";
 
 const CONFIRMACION = "IMPORTAR";
 const cargarFirestore = async () => (await import("../../services/catalogoFirebase")).getProductosFirebase();
@@ -34,6 +35,7 @@ function PaginaMigracion({ obtenerCliente = obtenerClienteSupabase, leerAlmacen 
   const [catalogo, setCatalogo] = useState(null);
   const [mensaje, setMensaje] = useState(null);
   const [ocupado, setOcupado] = useState(false);
+  const confirmar = useConfirmar();
 
   const recargarImportaciones = useCallback(async () => {
     try {
@@ -104,8 +106,14 @@ function PaginaMigracion({ obtenerCliente = obtenerClienteSupabase, leerAlmacen 
       await recargarImportaciones();
     });
 
-  const revertir = (imp) => {
-    if (!window.confirm(`¿Revertir la importación ${imp.id}? Se borrarán solo los datos que creó esa importación.`)) return;
+  const revertir = async (imp) => {
+    const seguro = await confirmar({
+      titulo: `¿Revertir la importación ${imp.id}?`,
+      mensaje: "Se borrarán solo los datos que creó esa importación. El resto no se toca.",
+      aceptar: "Revertir importación",
+      peligro: true,
+    });
+    if (!seguro) return;
     ejecutar(async (sb) => {
       await revertirImportacion(sb, imp.id);
       setMensaje({ tipo: "success", texto: `Importación ${imp.id} revertida.` });

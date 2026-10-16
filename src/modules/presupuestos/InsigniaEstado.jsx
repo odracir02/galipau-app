@@ -1,9 +1,9 @@
 import { ESTADOS } from "./domain/estados";
 
+// State badge; colours come from the theme (gx-estado-*), readable in light and dark
 function InsigniaEstado({ estado }) {
   const e = ESTADOS[estado];
-  if (!e) return <span className="badge text-bg-secondary">{estado}</span>;
-  return <span className={`badge text-bg-${e.color} ${e.color === "light" ? "border" : ""}`}>{e.etiqueta}</span>;
+  return <span className={`gx-insignia gx-estado-${e ? estado : "borrador"}`}>{e?.etiqueta ?? estado}</span>;
 }
 
 export default InsigniaEstado;

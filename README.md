@@ -11,6 +11,7 @@ Galipau App is a single-owner web application. It is moving to a **cloud deploym
 - **Versioned pricing parameters** editable from the app (each change creates a new version; previous versions are kept)
 - **Persistent quotes** (cloud mode): customers, multi-line jobs, lifecycle with enforced transitions (draft → presented → accepted → in production → finished → paid, or cancelled), gap-free numbering assigned on presentation, and an economic snapshot (engine and parameter versions) that keeps every quote reproducible
 - **Customer PDF** in Spanish or Valencian, without internal costs or margins
+- **Modern interface**: collapsible side navigation (off-canvas on phones), grouped settings, light and dark themes with a persistent preference, a home dashboard and a customer list; brand identity and design tokens are centralised
 - **Controlled data migration** from the legacy browser history and catalogue: preview, duplicate detection, integrity checks and revert
 - Customers API (create, edit, search, archive)
 - Product catalogue (suppliers → models → variants), costs stored as integer cents

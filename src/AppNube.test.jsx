@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // The app in cloud mode (VITE_BACKEND=supabase) with a fake Supabase client.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 import { crearSesionSupabase } from "./app/sesion/servicios";
@@ -39,9 +39,14 @@ describe("App en la nube — acceso", () => {
     await user.type(screen.getByLabelText("Email"), PROPIETARIO.email);
     await user.type(screen.getByLabelText("Contraseña"), PROPIETARIO.password);
     await user.click(screen.getByRole("button", { name: "Entrar" }));
-    expect(await screen.findByRole("heading", { name: "Presupuestos" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "+ Nuevo presupuesto" }).getAttribute("href")).toBe("/presupuestos/nuevo");
-    expect(screen.getByRole("link", { name: "Versión antigua" }).getAttribute("href")).toBe("/antiguo");
+    expect(await screen.findByRole("heading", { name: "Inicio" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Nuevo presupuesto" }).getAttribute("href")).toBe("/presupuestos/nuevo");
+    const menu = within(screen.getByRole("navigation", { name: "Navegación principal" }));
+    expect(menu.getAllByRole("link").map((l) => l.textContent)).toEqual([
+      "Inicio", "Calculadora de costes", "Presupuestos", "Clientes", "PedidosPronto", "ProducciónPronto", "InventarioPronto",
+    ]);
+    expect(screen.getByRole("link", { name: "Configuración" }).getAttribute("href")).toBe("/configuracion");
+    expect(screen.queryByRole("link", { name: "Versión antigua" })).toBeNull();
     expect(screen.getByRole("contentinfo").textContent).toBe("Galipau Arts · Galipau App");
   });
 
@@ -52,7 +57,7 @@ describe("App en la nube — acceso", () => {
     await user.type(screen.getByLabelText("Contraseña"), OTRO.password);
     await user.click(screen.getByRole("button", { name: "Entrar" }));
     expect(await screen.findByText("Esta cuenta no tiene acceso a Galipau App.")).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "Presupuestos" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Inicio" })).toBeNull();
   });
 
   it("contraseña incorrecta y campos vacíos", async () => {

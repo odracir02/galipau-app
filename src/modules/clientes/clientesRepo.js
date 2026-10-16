@@ -36,8 +36,9 @@ export const validarCliente = (c) => {
   return errores;
 };
 
-export const buscarClientes = async (sb, texto = "", limite = 20) => {
-  let q = sb.from("clientes").select(COLUMNAS).eq("archivado", false);
+export const buscarClientes = async (sb, texto = "", limite = 20, { incluirArchivados = false } = {}) => {
+  let q = sb.from("clientes").select(COLUMNAS);
+  if (!incluirArchivados) q = q.eq("archivado", false);
   if (texto.trim()) q = q.ilike("nombre", `%${texto.trim().replace(/[%_]/g, "")}%`);
   return desenvolver(await q.order("nombre").limit(limite)) ?? [];
 };
@@ -47,3 +48,6 @@ export const crearCliente = async (sb, datos) =>
 
 export const actualizarCliente = async (sb, id, datos) =>
   desenvolver(await sb.from("clientes").update(normalizarCliente(datos)).eq("id", id).select(COLUMNAS).single(), MENSAJES);
+
+export const archivarCliente = async (sb, id, archivado) =>
+  desenvolver(await sb.from("clientes").update({ archivado }).eq("id", id).select(COLUMNAS).single());

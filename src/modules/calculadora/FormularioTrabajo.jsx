@@ -36,7 +36,7 @@ function FormularioTrabajo({
 
   return (
     <fieldset disabled={soloLectura}>
-      <h5>Prendas</h5>
+      <h3 className="gx-subtitulo">Prendas</h3>
       {lineas.map((l, i) => {
         const d = detalle[i];
         const costeLinea = d && Number.isFinite(d.cantidad) && Number.isFinite(d.precioUnitario) ? d.cantidad * d.precioUnitario : null;
@@ -83,7 +83,7 @@ function FormularioTrabajo({
 
       <div className="row g-3 mb-3">
         <div className="col-md-6">
-          <h5>Zonas de impresión</h5>
+          <h3 className="gx-subtitulo">Zonas de impresión</h3>
           {zonas.map((z) => (
             <div className="input-group input-group-sm mb-2" key={z.id}>
               <input aria-label={`Nombre de la zona ${z.nombre}`} className="input-group-text text-start" style={{ maxWidth: 140 }} value={z.nombre}
@@ -104,7 +104,7 @@ function FormularioTrabajo({
           <div className="form-text">Cada color de cada zona necesita una pantalla.</div>
         </div>
         <div className="col-md-6">
-          <h5>Trabajo y precio</h5>
+          <h3 className="gx-subtitulo">Trabajo y precio</h3>
           <label className="form-label small mb-0" htmlFor="minutosDiseno">Tiempo de diseño (minutos)</label>
           <input id="minutosDiseno" className="form-control form-control-sm mb-2" inputMode="numeric" value={minutosDiseno} onChange={(e) => cambiar("minutosDiseno", e.target.value)} />
           <label className="form-label small mb-0" htmlFor="merma">Merma (%)</label>
