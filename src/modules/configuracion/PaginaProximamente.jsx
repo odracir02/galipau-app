@@ -20,7 +20,7 @@ const MODULOS = {
     titulo: "Inventario",
     icono: Package,
     texto: "Existencias de prendas y consumibles, reservas por pedido y avisos de reposición.",
-    mientras: "Mientras tanto, los costes de prendas y consumibles se gestionan en el catálogo y en los parámetros de cálculo.",
+    mientras: "El catálogo (lo que se puede comprar y a qué precio) ya está disponible en Catálogo; el inventario llevará las existencias físicas.",
   },
 };
 

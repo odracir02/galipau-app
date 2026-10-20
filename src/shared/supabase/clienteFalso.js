@@ -53,6 +53,7 @@ export const crearClienteFalso = ({
       },
       eq: (col, valor) => filtro((f) => f[col] === valor),
       neq: (col, valor) => filtro((f) => f[col] !== valor),
+      is: (col, valor) => filtro((f) => (f[col] ?? null) === valor),
       in: (col, valores) => filtro((f) => valores.includes(f[col])),
       gte: (col, valor) => filtro((f) => f[col] >= valor),
       lte: (col, valor) => filtro((f) => f[col] <= valor),

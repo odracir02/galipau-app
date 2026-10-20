@@ -1,6 +1,6 @@
 // Main navigation, defined once. Modules not built yet are marked "proximamente":
 // they lead to an explanatory page and are never presented as working features.
-import { Calculator, ClipboardList, Factory, FileText, History, Home, Package, Settings, Users } from "lucide-react";
+import { BookOpen, Calculator, ClipboardList, Factory, FileText, History, Home, Package, Settings, Users } from "lucide-react";
 
 export const NAVEGACION_NUBE = [
   {
@@ -15,6 +15,7 @@ export const NAVEGACION_NUBE = [
   {
     seccion: "Taller",
     enlaces: [
+      { ruta: "/catalogo", texto: "Catálogo", icono: BookOpen },
       { ruta: "/pedidos", texto: "Pedidos", icono: ClipboardList, proximamente: true },
       { ruta: "/produccion", texto: "Producción", icono: Factory, proximamente: true },
       { ruta: "/inventario", texto: "Inventario", icono: Package, proximamente: true },

@@ -17,8 +17,8 @@ const MIGRACIONES = path.join(RAIZ, "supabase", "migrations");
 export const listar = (carpeta = MIGRACIONES) =>
   fs.readdirSync(carpeta).filter((f) => /^\d{14}_[a-z0-9_]+\.sql$/.test(f)).sort();
 
-export const generarInstalacion = ({ desde = null, carpeta = MIGRACIONES } = {}) => {
-  const archivos = listar(carpeta).filter((f) => !desde || f.slice(0, 14) >= desde);
+export const generarInstalacion = ({ desde = null, hasta = null, carpeta = MIGRACIONES } = {}) => {
+  const archivos = listar(carpeta).filter((f) => (!desde || f.slice(0, 14) >= desde) && (!hasta || f.slice(0, 14) <= hasta));
   if (archivos.length === 0) throw new Error(desde ? `No hay migraciones desde ${desde}.` : "No hay migraciones.");
   const partes = archivos.map((f) => `-- ===== ${f} =====\n${fs.readFileSync(path.join(carpeta, f), "utf8").trim()}\n`);
   return {

@@ -39,7 +39,7 @@ describe("migración del precio neto sobre datos existentes", () => {
     await db.exec(fs.readFileSync(new URL("./entorno-supabase.sql", import.meta.url), "utf8"));
     const todas = listarMigraciones();
     for (const m of todas.slice(0, todas.indexOf(MIGRACION))) await db.exec(leer(m));
-    const { sql } = generarInstalacion({ desde: "20261018090000" });
+    const { sql } = generarInstalacion({ desde: "20261018090000", hasta: "20261018090000" });
     await db.exec(sql);
     await db.exec(sql);
     expect((await db.query("select count(*)::int n from information_schema.columns where table_name = 'v_catalogo_plano' and column_name in ('coste', 'precio_neto')")).rows[0].n).toBe(2);
