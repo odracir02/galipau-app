@@ -315,6 +315,19 @@ describe("migración controlada", () => {
     expect(vista.getByRole("button", { name: "Importar 1 productos" }).disabled).toBe(true);
   });
 
+  it("si la base de datos no tiene la migración del catálogo, lo explica en lugar del error técnico", async () => {
+    const user = userEvent.setup();
+    const { sb } = crearBd();
+    sb.from = ((original) => (tabla) => {
+      if (tabla !== "v_catalogo_plano") return original(tabla);
+      const q = { select: () => q, order: () => q, range: () => q, then: (ok) => Promise.resolve({ data: null, error: { code: "42703", message: "column v_catalogo_plano.coste does not exist" } }).then(ok) };
+      return q;
+    })(sb.from);
+    render(<PaginaMigracion obtenerCliente={async () => sb} leerAlmacen={() => almacen([])} leerCatalogoFirestore={async () => []} />);
+    await user.click(screen.getByRole("button", { name: "Vista previa desde Firestore" }));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/todavía no tiene la actualización del catálogo \(migración 20261018090000\)/);
+  });
+
   it("catálogo desde archivo con neto e IVA: tipo por modelo, copia reciente obligatoria, importa y cuadra", async () => {
     const user = userEvent.setup();
     const { sb, tablas, rpcs } = crearBd();

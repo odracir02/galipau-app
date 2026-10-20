@@ -21,6 +21,31 @@ const instantanea = async (db) => {
 };
 
 describe("migración del precio neto sobre datos existentes", () => {
+  it("termina bien sobre un estado a medias (una columna ya añadida, vista y función sin cambiar)", async () => {
+    const db = await PGlite.create();
+    await db.exec(fs.readFileSync(new URL("./entorno-supabase.sql", import.meta.url), "utf8"));
+    const todas = listarMigraciones();
+    for (const m of todas.slice(0, todas.indexOf(MIGRACION))) await db.exec(leer(m));
+    await db.exec("alter table public.variantes add column precio_neto numeric(12, 4)");
+    await db.exec(leer(MIGRACION));
+    const cols = (await db.query("select column_name from information_schema.columns where table_schema = 'public' and table_name = 'v_catalogo_plano' order by ordinal_position")).rows.map((r) => r.column_name);
+    expect(cols).toEqual(["id", "tipo", "proveedor", "modelo", "talla", "color", "coste_cent", "precio_neto", "iva_porcentaje", "coste", "referencia"]);
+    await db.close();
+  });
+
+  it("como en el SQL Editor: el archivo generado (una transacción) se aplica sobre la base sin migrar", async () => {
+    const { generarInstalacion } = await import("../../ops/produccion/generar-instalacion.mjs");
+    const db = await PGlite.create();
+    await db.exec(fs.readFileSync(new URL("./entorno-supabase.sql", import.meta.url), "utf8"));
+    const todas = listarMigraciones();
+    for (const m of todas.slice(0, todas.indexOf(MIGRACION))) await db.exec(leer(m));
+    const { sql } = generarInstalacion({ desde: "20261018090000" });
+    await db.exec(sql);
+    await db.exec(sql);
+    expect((await db.query("select count(*)::int n from information_schema.columns where table_name = 'v_catalogo_plano' and column_name in ('coste', 'precio_neto')")).rows[0].n).toBe(2);
+    await db.close();
+  });
+
   it("conserva clientes, presupuestos, parámetros, contador 2026 = 2, copias y catálogo; es repetible", async () => {
     const db = await PGlite.create();
     await db.exec(fs.readFileSync(new URL("./entorno-supabase.sql", import.meta.url), "utf8"));

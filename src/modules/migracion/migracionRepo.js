@@ -14,10 +14,23 @@ export const huellasImportadas = async (sb) => {
 export const presupuestosDeImportacion = async (sb, importacionId) =>
   desenvolver(await sb.from("presupuestos").select("id, total_cent").eq("importacion_id", importacionId)) ?? [];
 
-export const catalogoActual = async (sb) =>
-  leerTodo((desde, hasta) =>
-    sb.from("v_catalogo_plano").select("id, tipo, proveedor, modelo, talla, color, coste_cent, coste, precio_neto, iva_porcentaje").order("id").range(desde, hasta)
-  );
+export class ErrorMigracionPendiente extends Error {}
+
+export const catalogoActual = async (sb) => {
+  try {
+    return await leerTodo((desde, hasta) =>
+      sb.from("v_catalogo_plano").select("id, tipo, proveedor, modelo, talla, color, coste_cent, coste, precio_neto, iva_porcentaje").order("id").range(desde, hasta)
+    );
+  } catch (e) {
+    // This database does not have migration 20261018090000 (net price) yet
+    if (/(coste|precio_neto|iva_porcentaje).*does not exist|42703/i.test(e.message ?? "")) {
+      throw new ErrorMigracionPendiente(
+        "Esta base de datos todavía no tiene la actualización del catálogo (migración 20261018090000). Aplícala en el SQL Editor de este proyecto antes de importar."
+      );
+    }
+    throw e;
+  }
+};
 
 export const importarHistorial = async (sb, registros, resumen) =>
   desenvolver(await sb.rpc("importar_historial", { p_registros: registros, p_resumen: resumen }));
