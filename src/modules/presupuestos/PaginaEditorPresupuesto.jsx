@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { formularioTransferido } from "../calculadora/trabajoCalculadora";
 import FormularioTrabajo from "../calculadora/FormularioTrabajo";
 import DesgloseCostes from "../calculadora/DesgloseCostes";
 import { useCalculoSerigrafia } from "../calculadora/useCalculoSerigrafia";
@@ -28,6 +29,9 @@ function PaginaEditorPresupuesto({ obtenerCliente = obtenerClienteSupabase, carg
   const { id } = useParams();
   const [busqueda] = useSearchParams();
   const duplicarDe = busqueda.get("duplicar");
+  // Job handed over by the cost calculator (navigation state, not in the URL)
+  const { state: estadoNavegacion } = useLocation();
+  const transferido = useMemo(() => formularioTransferido(estadoNavegacion), [estadoNavegacion]);
   const navigate = useNavigate();
   const confirmar = useConfirmar();
 
@@ -73,19 +77,28 @@ function PaginaEditorPresupuesto({ obtenerCliente = obtenerClienteSupabase, carg
           setDocumento(e.documento);
           setCliente(e.cliente);
           setMensaje({ tipo: "info", texto: "Copia de un presupuesto: revisa los datos y guárdala. Se recalcula con los precios actuales del catálogo y los parámetros vigentes." });
+        } else if (transferido) {
+          setFormulario(transferido.formulario);
+          setDocumento(datosDocumentoIniciales(emp));
+          setCliente(null);
+          // Same parameter version as the calculator, so the result is the same
+          if (transferido.parametrosVersion && a && transferido.parametrosVersion !== a.version) {
+            setParametros((await cargarVersionParametros(cliente, "serigrafia", transferido.parametrosVersion)) ?? a);
+          }
+          setMensaje({ tipo: "info", texto: "Trabajo traído de la calculadora. Elige el cliente, revisa los datos y guarda: todavía no se ha guardado nada." });
         } else {
           setFormulario(formularioVacio(a?.valores));
           setDocumento(datosDocumentoIniciales(emp));
           setCliente(null);
         }
       }
-      setSucio(false);
+      setSucio(!id && Boolean(transferido));
     } catch (e) {
       setError(e.message);
     } finally {
       setCargado(true);
     }
-  }, [id, duplicarDe, obtenerCliente, cargarProductos]);
+  }, [id, duplicarDe, transferido, obtenerCliente, cargarProductos]);
 
   useEffect(() => {
     cargar();

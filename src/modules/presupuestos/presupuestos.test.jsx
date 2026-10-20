@@ -15,7 +15,10 @@ import { TRANSICIONES, esEditable } from "./domain/estados";
 import { CATALOGO_FICTICIO, CLIENTE_FICTICIO, registroFicticio } from "./domain/fixtures";
 import { huella } from "../migracion/domain/historial";
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  sessionStorage.clear();
+});
 
 const fila = (version, valores = PARAMETROS_EJEMPLO, estado = "activa") => ({ id: version, tecnica: "serigrafia", version, estado, valores, notas: null, creado_en: "2026-10-17T08:00:00Z" });
 

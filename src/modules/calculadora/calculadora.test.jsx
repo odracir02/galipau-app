@@ -8,7 +8,10 @@ import PaginaParametros from "./PaginaParametros";
 import { crearClienteFalso } from "../../shared/supabase/clienteFalso";
 import { PARAMETROS_EJEMPLO } from "../../domain/calculo/serigrafia/parametros";
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  sessionStorage.clear();
+});
 
 const filaParametros = (version, valores = PARAMETROS_EJEMPLO, estado = "activa") => ({
   id: version, tecnica: "serigrafia", version, estado, valores: JSON.parse(JSON.stringify(valores)), notas: `v${version}`, creado_en: "2026-10-16T08:00:00Z",

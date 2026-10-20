@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { FilePlus2, SlidersHorizontal } from "lucide-react";
 import DesgloseCostes from "./DesgloseCostes";
 import ResumenCalculo from "./ResumenCalculo";
@@ -16,6 +16,8 @@ import { backendActivo } from "../../app/backend";
 import { calcularPresupuesto } from "../../domain/calculo";
 import { euros, leerNumero } from "../../shared/utils/dinero";
 import { formularioVacio } from "../presupuestos/domain/instantanea";
+import { leerTrabajo, guardarTrabajo, olvidarTrabajo, trabajoVacio, transferenciaAPresupuesto, avisosAntesDeTransferir } from "./trabajoCalculadora";
+import { useConfirmar } from "../../shared/ui/contextoDialogos";
 
 // Quick real-cost calculator (nothing is saved). Quotes use the same form in the quote editor.
 function PaginaCalculadoraSerigrafia({ obtenerCliente = obtenerClienteSupabase, cargarProductos = getProductos }) {
@@ -23,7 +25,11 @@ function PaginaCalculadoraSerigrafia({ obtenerCliente = obtenerClienteSupabase, 
   const [parametros, setParametros] = useState(undefined);
   const [productos, setProductos] = useState([]);
   const [error, setError] = useState(null);
-  const [formulario, setFormulario] = useState(() => formularioVacio(null));
+  // The job typed so far survives leaving the page (kept for this browser tab)
+  const [trabajoGuardado] = useState(() => leerTrabajo());
+  const [formulario, setFormulario] = useState(() => trabajoGuardado ?? formularioVacio(null));
+  const navigate = useNavigate();
+  const confirmar = useConfirmar();
   const [comparar, setComparar] = useState(false);
 
   useEffect(() => {
@@ -34,12 +40,17 @@ function PaginaCalculadoraSerigrafia({ obtenerCliente = obtenerClienteSupabase, 
         const [p, prods] = await Promise.all([cargarParametrosActivos(sb, "serigrafia"), cargarProductos()]);
         setParametros(p);
         setProductos(prods);
-        if (p) setFormulario((f) => ({ ...f, mermaPorcentaje: formularioVacio(p.valores).mermaPorcentaje }));
+        // Default waste from the parameters only for a fresh job, never over what was typed
+        if (p && !trabajoGuardado) setFormulario((f) => ({ ...f, mermaPorcentaje: formularioVacio(p.valores).mermaPorcentaje }));
       } catch (e) {
         setError(e.message);
       }
     })();
-  }, [nube, obtenerCliente, cargarProductos]);
+  }, [nube, obtenerCliente, cargarProductos, trabajoGuardado]);
+
+  useEffect(() => {
+    guardarTrabajo(formulario);
+  }, [formulario]);
 
   const { problemas, erroresEntrada, resultado, detalle } = useCalculoSerigrafia(formulario, productos, parametros?.valores);
 
@@ -89,10 +100,35 @@ function PaginaCalculadoraSerigrafia({ obtenerCliente = obtenerClienteSupabase, 
 
   const mostrarAvisos = formulario.lineas.some((l) => l.quantity !== "" || l.proveedor !== "");
 
+  // Opens a new quote with this job already filled in (nothing is saved here)
+  const crearPresupuesto = async () => {
+    const avisos = trabajoVacio(formulario) ? [] : avisosAntesDeTransferir({ problemas, erroresEntrada, resultado });
+    if (avisos.length) {
+      const seguir = await confirmar({
+        titulo: "El trabajo está incompleto",
+        mensaje: `${avisos.join(" ")} Puedes completarlo ahora o pasarlo así al presupuesto y terminarlo allí.`,
+        aceptar: "Pasar al presupuesto",
+        cancelar: "Seguir en la calculadora",
+      });
+      if (!seguir) return;
+    }
+    navigate("/presupuestos/nuevo", { state: trabajoVacio(formulario) ? null : transferenciaAPresupuesto(formulario, parametros.version) });
+  };
+
+  const empezarDeNuevo = () => {
+    olvidarTrabajo();
+    setFormulario(formularioVacio(parametros.valores));
+  };
+
   return (
     <>
       <Cabecera titulo={titulo} descripcion={`Coste real de un trabajo de serigrafía con los parámetros vigentes (versión ${parametros.version}). No se guarda nada.`}
-        acciones={<Link to="/presupuestos/nuevo" className="btn btn-outline-primary btn-icono"><FilePlus2 size={16} aria-hidden="true" />Crear presupuesto</Link>} />
+        acciones={
+          <>
+            <button type="button" className="btn btn-outline-secondary" onClick={empezarDeNuevo}>Empezar de nuevo</button>
+            <button type="button" className="btn btn-primary btn-icono" onClick={crearPresupuesto}><FilePlus2 size={16} aria-hidden="true" />Crear presupuesto</button>
+          </>
+        } />
       <div className="row g-4">
         <div className="col-xl-8">
           <div className="gx-tarjeta">
