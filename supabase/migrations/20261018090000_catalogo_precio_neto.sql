@@ -1,17 +1,30 @@
 -- Catalogue prices exactly as the supplier lists them: net price + VAT rate.
--- The master spreadsheet stores "real cost = net × (1 + VAT)" with up to four
--- decimals (e.g. 2.5 × 1.21 = 3.025), and some net prices themselves have
--- three decimals (e.g. 2.125). Rounding that to cents would change
--- quote costs, so the net price and the VAT rate are kept and the exact cost
--- is derived from them. coste_cent stays as the rounded value for listings and
+-- The master spreadsheet stores "real cost = net x (1 + VAT)": net prices have
+-- up to three decimals and the resulting cost up to five (e.g. 2.125 x 1.21 =
+-- 2.57125). Rounding that to cents would change quote costs, so the net price
+-- (up to four decimals) and the VAT rate are kept and the exact cost is
+-- derived from them. coste_cent stays as the rounded value for listings and
 -- for variants that only have a cost (e.g. imported from Firestore).
--- Nothing is recalculated for existing rows and no VAT is added automatically:
--- the VAT rate is stored only when the source states it.
+--
+-- Safety: this migration only ADDS two nullable columns and one check to
+-- variantes, and REPLACES the definition of the v_catalogo_plano view and of
+-- the importar_catalogo function (same names, same signature, privileges kept
+-- and restated). It deletes no table, column or row and updates no data;
+-- existing variants keep their cost (new columns stay empty). It can be run
+-- more than once.
 
 alter table public.variantes
-  add column precio_neto numeric(12, 4) check (precio_neto is null or precio_neto >= 0),
-  add column iva_porcentaje numeric(5, 2) check (iva_porcentaje is null or (iva_porcentaje >= 0 and iva_porcentaje <= 100)),
-  add constraint variantes_neto_iva_check check ((precio_neto is null) = (iva_porcentaje is null));
+  add column if not exists precio_neto numeric(12, 4) check (precio_neto is null or precio_neto >= 0),
+  add column if not exists iva_porcentaje numeric(5, 2) check (iva_porcentaje is null or (iva_porcentaje >= 0 and iva_porcentaje <= 100));
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'variantes_neto_iva_check' and conrelid = 'public.variantes'::regclass) then
+    alter table public.variantes
+      add constraint variantes_neto_iva_check check ((precio_neto is null) = (iva_porcentaje is null));
+  end if;
+end;
+$$;
 
 -- Exact cost in euros: net × (1 + VAT) when known, otherwise the stored cost
 create or replace view public.v_catalogo_plano with (security_invoker = true) as

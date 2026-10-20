@@ -24,7 +24,11 @@ export class ErrorCalculo extends Error {
   }
 }
 
-export const aCentimos = (euros) => Math.round(euros * 100);
+// Rounds euros to integer cents, half up. The product is first reduced to 15
+// significant digits (as the spreadsheet does), so binary floating-point noise
+// cannot tip an exact half cent the wrong way: 98.01 * 100 = 9800.999999999998
+// becomes 9801, and an exact x.xx5 always rounds up.
+export const aCentimos = (euros) => Math.round(Number((euros * 100).toPrecision(15)));
 
 // Rounds integer cents UP to the next multiple of `pasoCent` (0 = no rounding).
 // Integer arithmetic avoids floating point errors (e.g. 3,00 € stays 3,00 €).

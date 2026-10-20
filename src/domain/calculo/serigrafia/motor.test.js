@@ -145,6 +145,12 @@ describe("precio final, beneficio y redondeos", () => {
     expect(aCentimos(12.344)).toBe(1234);
     expect(aCentimos(12.345)).toBe(1235);
     expect(aCentimos(-0.004)).toBe(-0);
+    // exact half cents hidden by binary noise still round half up (like the spreadsheet)
+    expect(1.005 * 100).toBeLessThan(100.5); // 100.49999999999999
+    expect(aCentimos(1.005)).toBe(101);
+    expect(aCentimos(0.1 + 0.2)).toBe(30);
+    expect(aCentimos(3.9204 * 25)).toBe(9801);
+    expect(aCentimos(2.57125 * 2)).toBe(514); // 5.1425 -> 514.25 -> 514
     const r = calcularCosteSerigrafia(base(), P);
     expect(r.costes.totalCent).toBe(Math.round(r.costes.total * 100));
   });
