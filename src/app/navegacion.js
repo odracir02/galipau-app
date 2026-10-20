@@ -18,7 +18,7 @@ export const NAVEGACION_NUBE = [
       { ruta: "/catalogo", texto: "Catálogo", icono: BookOpen },
       { ruta: "/pedidos", texto: "Pedidos", icono: ClipboardList, proximamente: true },
       { ruta: "/produccion", texto: "Producción", icono: Factory, proximamente: true },
-      { ruta: "/inventario", texto: "Inventario", icono: Package, proximamente: true },
+      { ruta: "/inventario", texto: "Inventario", icono: Package },
     ],
   },
 ];

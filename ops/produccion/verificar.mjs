@@ -14,6 +14,7 @@ import { esClaveSecreta } from "../../src/shared/supabase/config.js";
 export const TABLAS = [
   "clientes", "configuracion", "contadores", "importaciones", "modelos", "parametros_calculo",
   "presupuestos", "propietario", "proveedores", "registro_copias", "variantes", "v_catalogo_plano", "v_catalogo_admin",
+  "stock_articulos", "stock_movimientos", "stock_reservas", "stock_necesidades", "v_stock", "v_stock_compras",
 ];
 
 // Called with arguments that would fail anyway: they must be rejected before running

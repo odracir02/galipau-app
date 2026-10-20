@@ -43,7 +43,7 @@ describe("App en la nube — acceso", () => {
     expect(screen.getByRole("link", { name: "Nuevo presupuesto" }).getAttribute("href")).toBe("/presupuestos/nuevo");
     const menu = within(screen.getByRole("navigation", { name: "Navegación principal" }));
     expect(menu.getAllByRole("link").map((l) => l.textContent)).toEqual([
-      "Inicio", "Calculadora de costes", "Presupuestos", "Clientes", "Catálogo", "PedidosPronto", "ProducciónPronto", "InventarioPronto",
+      "Inicio", "Calculadora de costes", "Presupuestos", "Clientes", "Catálogo", "PedidosPronto", "ProducciónPronto", "Inventario",
     ]);
     expect(screen.getByRole("link", { name: "Configuración" }).getAttribute("href")).toBe("/configuracion");
     expect(screen.queryByRole("link", { name: "Versión antigua" })).toBeNull();
@@ -95,7 +95,7 @@ describe("copias en la nube", () => {
     expect(datos.exportadoEn).toBe("2026-10-15T00:00:00.000Z");
     expect(datos.tablas.clientes).toHaveLength(1200);
     expect(datos.tablas.configuracion).toHaveLength(1);
-    expect(Object.keys(datos.tablas)).toEqual(["configuracion", "contadores", "parametros_calculo", "importaciones", "clientes", "proveedores", "modelos", "variantes", "presupuestos"]);
+    expect(Object.keys(datos.tablas)).toEqual(["configuracion", "contadores", "parametros_calculo", "importaciones", "clientes", "proveedores", "modelos", "variantes", "presupuestos", "stock_articulos", "stock_movimientos", "stock_reservas", "stock_necesidades"]);
   });
 
   it("la página muestra el estado de las copias y descarga la exportación", async () => {

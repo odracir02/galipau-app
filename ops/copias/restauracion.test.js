@@ -25,6 +25,13 @@ beforeAll(async () => {
     // Presented and accepted: number, version and state log are set by the database and must survive the restore
     await tx.query("update public.presupuestos set estado = 'presentado' where id = $1", [id]);
     await tx.query("update public.presupuestos set estado = 'aceptado' where id = $1", [id]);
+    // Stock with an opening load, an entry, a correction and an active reservation
+    const variante = (await tx.query("select id from public.variantes order by id desc limit 1")).rows[0].id; // not the row the tamper test removes
+    await tx.query("select public.stock_carga_inicial($1::jsonb)", [JSON.stringify([{ variante_id: variante, cantidad: 12, coste_unitario: 3.025 }])]);
+    const entrada = (await tx.query("select public.stock_registrar($1, 'entrada', 30, null, 'Albarán ficticio', 3.1) id", [variante])).rows[0].id;
+    await tx.query("select public.stock_corregir($1, 'Eran 3')", [entrada]);
+    await tx.query("select public.stock_registrar($1, 'entrada', 3, null, 'Albarán ficticio', 3.1)", [variante]);
+    await tx.query("select public.stock_reservar($1, 5, 'PED-FICTICIO')", [variante]);
   });
   await origen.exec("insert into public.registro_copias (tipo, estado, detalle) values ('base_datos', 'correcta', '{\"prueba\": true}')");
 
@@ -45,8 +52,8 @@ afterAll(async () => {
 describe("volcado", () => {
   it("contiene la estructura, la seguridad y los datos esperados", () => {
     expect(copia.esquema).toMatch(/CREATE TABLE public\.presupuestos/);
-    expect((copia.esquema.match(/ENABLE ROW LEVEL SECURITY/g) ?? []).length).toBe(11);
-    expect((copia.esquema.match(/CREATE POLICY/g) ?? []).length).toBe(18);
+    expect((copia.esquema.match(/ENABLE ROW LEVEL SECURITY/g) ?? []).length).toBe(15);
+    expect((copia.esquema.match(/CREATE POLICY/g) ?? []).length).toBe(23);
     expect((copia.datos.match(/^INSERT INTO public\.variantes/gm) ?? []).length).toBe(36);
     expect(copia.datos).toMatch(/OVERRIDING SYSTEM VALUE/);
     expect(copia.datos).toMatch(/setval\('public\.clientes_id_seq'/);
@@ -96,6 +103,9 @@ describe("restauración en una base de datos aislada", () => {
     expect(rows[0].ultimo).toBe(1);
     const restaurado = (await db.query("select numero, estado, version, jsonb_array_length(historial_estados) n from public.presupuestos")).rows[0];
     expect(restaurado).toEqual({ numero: "2026/001", estado: "aceptado", version: 1, n: 3 });
+    const stock = (await db.query("select fisico, reservado from public.stock_articulos")).rows[0];
+    expect(stock).toEqual({ fisico: 15, reservado: 5 });
+    expect((await db.query("select count(*)::int n, count(corrige_movimiento_id)::int c from public.stock_movimientos")).rows[0]).toEqual({ n: 4, c: 1 });
     // The next quote presented after the restore gets the next number
     await db.exec("set row_security = on"); // the dump session turns it off
     const siguiente = await comoPropietario(db, async (tx) => {

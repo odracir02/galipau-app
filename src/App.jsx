@@ -19,6 +19,11 @@ import PaginaCatalogo from "./modules/catalogo/PaginaCatalogo";
 import PaginaProveedores from "./modules/catalogo/PaginaProveedores";
 import PaginaFichaProveedor from "./modules/catalogo/PaginaFichaProveedor";
 import PaginaFichaModelo from "./modules/catalogo/PaginaFichaModelo";
+import PaginaInventario from "./modules/inventario/PaginaInventario";
+import PaginaMovimiento from "./modules/inventario/PaginaMovimiento";
+import PaginaArticulo from "./modules/inventario/PaginaArticulo";
+import PaginaCargaInicial from "./modules/inventario/PaginaCargaInicial";
+import PaginaCompras from "./modules/inventario/PaginaCompras";
 import PaginaConfiguracion from "./modules/configuracion/PaginaConfiguracion";
 import PaginaApariencia from "./modules/configuracion/PaginaApariencia";
 import PaginaCompatibilidad from "./modules/configuracion/PaginaCompatibilidad";
@@ -50,7 +55,11 @@ function App({ servicioSesion }) {
                     <Route path="/catalogo/modelos/:id" element={<PaginaFichaModelo />} />
                     <Route path="/pedidos" element={<PaginaProximamente modulo="pedidos" />} />
                     <Route path="/produccion" element={<PaginaProximamente modulo="produccion" />} />
-                    <Route path="/inventario" element={<PaginaProximamente modulo="inventario" />} />
+                    <Route path="/inventario" element={<PaginaInventario />} />
+                    <Route path="/inventario/movimiento" element={<PaginaMovimiento />} />
+                    <Route path="/inventario/articulos/:varianteId" element={<PaginaArticulo />} />
+                    <Route path="/inventario/inicial" element={<PaginaCargaInicial />} />
+                    <Route path="/inventario/compras" element={<PaginaCompras />} />
                     {/* Temporary compatibility tools (previous form and browser history) */}
                     <Route path="/antiguo" element={<QuoteForm />} />
                   </>
