@@ -42,6 +42,8 @@ export default defineConfig(({ mode }) => {
   test: {
     // Database tests start a real PostgreSQL (PGlite) per test: slower on shared CI runners
     testTimeout: 20000,
+    // each database test holds an in-memory PostgreSQL: too many in parallel exhausts memory on many-core machines
+    maxWorkers: 4,
   },
   }
 })

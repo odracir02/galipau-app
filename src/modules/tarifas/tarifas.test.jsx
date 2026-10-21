@@ -56,11 +56,48 @@ const montar = (sb, ruta) =>
     </MemoryRouter>
   );
 
+describe("modo sencillo: subir, resumen e importar", () => {
+  const kpi = (titulo) => screen.getByText(titulo).closest(".gx-kpi").querySelector(".gx-kpi-valor").textContent;
+
+  it("aplica las reglas aprobadas: añade lo nuevo como «Sin clasificar», no toca precios ni lo dudoso", async () => {
+    const user = userEvent.setup();
+    const { sb, llamadas } = crearSb();
+    montar(sb, "/catalogo/tarifas/importar");
+    await user.upload(screen.getByLabelText("Excel de la tarifa (.xlsx)"), new File([crearXlsx([{ nombre: "Tarifa", filas: TARIFA_SOLS_FICTICIA }])], "tarifa-ficticia.xlsx"));
+    expect(await screen.findByText("Tarifa de SOL'S")).toBeTruthy();
+    expect([kpi("Productos nuevos"), kpi("Sin cambios"), kpi("Precios distintos"), kpi("Para revisar")]).toEqual(["22", "1", "1", "3"]);
+    expect(screen.queryByText(/Siguiente/)).toBeNull(); // no steps in the simple mode
+    await user.click(screen.getByRole("button", { name: "Importar 22 productos" }));
+    await user.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Aplicar tarifa" }));
+    expect(await screen.findByText("¡Hecho!")).toBeTruthy();
+    expect(screen.getByText(/22 productos añadidos en el catálogo de SOL'S/)).toBeTruthy();
+    const ops = llamadas[0].p_operaciones;
+    expect(ops.filter((o) => o.accion === "alta")).toHaveLength(22);
+    expect(ops.some((o) => o.accion === "precio" || o.accion === "archivar")).toBe(false);
+    expect(new Set(ops.filter((o) => o.accion === "alta" && !o.modelo.id).map((o) => o.modelo.tipo))).toEqual(new Set(["Sin clasificar"]));
+    expect(ops.some((o) => o.accion === "alta" && /KIDS/.test(o.modelo.nombre))).toBe(false); // size group left out
+    expect(screen.getByRole("link", { name: "Ver o deshacer esta importación" }).getAttribute("href")).toBe("/catalogo/tarifas/7");
+  });
+
+  it("los precios cambiados solo se actualizan si se marca la casilla", async () => {
+    const user = userEvent.setup();
+    const { sb, llamadas } = crearSb();
+    montar(sb, "/catalogo/tarifas/importar");
+    await user.upload(screen.getByLabelText("Excel de la tarifa (.xlsx)"), new File([crearXlsx([{ nombre: "Tarifa", filas: TARIFA_SOLS_FICTICIA }])], "tarifa-ficticia.xlsx"));
+    await user.click(await screen.findByLabelText("Actualizar también el precio que ha cambiado"));
+    await user.click(screen.getByRole("button", { name: "Importar 22 productos y 1 precio" }));
+    await user.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Aplicar tarifa" }));
+    await screen.findByText("¡Hecho!");
+    expect(llamadas[0].p_operaciones.filter((o) => o.accion === "precio").map((o) => [o.variante_id, o.precio.precio_neto])).toEqual([[2, 2.4]]);
+  });
+});
+
 describe("asistente de importación de tarifas", () => {
   it("analiza sin guardar, exige elegir modalidad e interpretación y solo aplica lo decidido", async () => {
     const user = userEvent.setup();
     const { sb, llamadas } = crearSb();
     montar(sb, "/catalogo/tarifas/importar");
+    await user.click(screen.getByRole("button", { name: /modo avanzado/ }));
     await user.click(screen.getByRole("button", { name: "Siguiente" })); // 1 -> 2 (detect supplier)
     const excel = new File([crearXlsx([{ nombre: "Tarifa", filas: TARIFA_SOLS_FICTICIA }])], "tarifa-ficticia.xlsx");
     await user.upload(screen.getByLabelText("Excel de la tarifa (.xlsx)"), excel);
@@ -108,7 +145,7 @@ describe("asistente de importación de tarifas", () => {
     await user.click(screen.getByRole("button", { name: "Siguiente" }));
 
     // 8. a new model needs its garment type
-    expect(screen.getByText(/Indica el tipo de artículo del modelo nuevo «LYRA»/)).toBeTruthy();
+    expect(screen.getByText(/Falta el tipo de artículo en 1 modelos nuevos/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Siguiente" }).disabled).toBe(true);
     await user.click(screen.getByRole("button", { name: "Atrás" }));
     await user.type(screen.getByLabelText("LYRA"), "Bolsa");
@@ -140,13 +177,16 @@ describe("asistente de importación de tarifas", () => {
     const user = userEvent.setup();
     const sb = crearClienteFalso({ tablas: { proveedores: [{ id: 5, nombre: "ROLY", activo: true }], v_catalogo_admin: [], variantes_tarifas: [] } });
     montar(sb, "/catalogo/tarifas/importar");
+    await user.click(screen.getByRole("button", { name: /modo avanzado/ }));
     await user.click(screen.getByRole("button", { name: "Siguiente" }));
     await user.upload(screen.getByLabelText("Excel de la tarifa (.xlsx)"), new File([crearXlsx([{ nombre: "Tarifa", filas: TARIFA_ROLY_FICTICIA }])], "roly-ficticia.xlsx"));
     expect(await screen.findByText(/formato ROLY/)).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Siguiente" }));
     await user.click(screen.getByRole("button", { name: "Siguiente" }));
     expect(screen.getByLabelText(/^Unidad/).checked).toBe(true);
-    expect(screen.getByLabelText(/No importarla/).checked).toBe(true);
+    // approved by the owner: Pack only for packs of one unit, pre-selected and editable
+    expect(screen.getByLabelText(/Usar el precio de Pack solo cuando el pack es de 1 unidad \(1 filas\)/).checked).toBe(true);
+    await user.click(screen.getByLabelText(/No importarla/));
     await user.click(screen.getByLabelText(/Usar el precio de Pack solo cuando el pack es de 1 unidad \(1 filas\)/));
     await user.click(screen.getByRole("button", { name: "Siguiente" }));
     await user.click(screen.getByRole("button", { name: "Siguiente" }));
@@ -161,6 +201,7 @@ describe("asistente de importación de tarifas", () => {
     const user = userEvent.setup();
     const { sb } = crearSb();
     montar(sb, "/catalogo/tarifas/importar");
+    await user.click(screen.getByRole("button", { name: /modo avanzado/ }));
     await user.click(screen.getByRole("button", { name: "Siguiente" }));
     await user.upload(screen.getByLabelText("Excel de la tarifa (.xlsx)"), new File([crearXlsx([{ nombre: "x", filas: [["hola"]] }])], "otra-cosa.xlsx"));
     expect((await screen.findByRole("alert")).textContent).toMatch(/No se reconoce el formato/);
@@ -207,6 +248,7 @@ describe("fallo a mitad de una importación por lotes", () => {
         </ProveedorDialogos>
       </MemoryRouter>
     );
+    await user.click(screen.getByRole("button", { name: /modo avanzado/ }));
     await user.click(screen.getByRole("button", { name: "Siguiente" }));
     await user.upload(screen.getByLabelText("Excel de la tarifa (.xlsx)"), new File([crearXlsx([{ nombre: "Tarifa", filas: TARIFA_SOLS_FICTICIA }])], "tarifa-ficticia.xlsx"));
     await screen.findByText(/formato SOL'S/);

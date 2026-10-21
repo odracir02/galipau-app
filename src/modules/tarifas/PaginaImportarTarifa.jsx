@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, FileSpreadsheet, ShieldCheck } from "lucide-react";
+import { ArrowLeft, CheckCircle2, FileSpreadsheet, ShieldCheck } from "lucide-react";
 import { obtenerClienteSupabase } from "../../shared/supabase/cliente";
 import { useConfirmar } from "../../shared/ui/contextoDialogos";
 import Cabecera from "../../shared/ui/Cabecera";
 import Aviso from "../../shared/ui/Aviso";
+import Cargando from "../../shared/ui/Cargando";
 import Paginacion from "../../shared/ui/Paginacion";
 import { paginar } from "../../shared/ui/paginado";
 import { NavCatalogo } from "../catalogo/PaginaCatalogo";
@@ -88,6 +89,9 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase, tamanoL
   const [pestana, setPestana] = useState("diferente");
   const [importando, setImportando] = useState(null); // { lote, lotes } while applying
   const [hecho, setHecho] = useState(null);
+  // "sencillo": upload, summary, import (the owner's approved rules); "avanzado": the 10 steps
+  const [modo, setModo] = useState("sencillo");
+  const [actualizarPrecios, setActualizarPrecios] = useState(false);
   const [parcial, setParcial] = useState(null); // an import that stopped half-way: { meta, ops, clave, lotes, lotesAplicados, importacionId, mensaje }
   const [avisoReversion, setAvisoReversion] = useState(null);
   const [importaciones, setImportaciones] = useState([]);
@@ -127,7 +131,12 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase, tamanoL
       setArchivo({ nombre: fichero.name, tamano: fichero.size, sha256: await huellaArchivo(datos) });
       setLectura(t);
       // only what the owner confirmed for this supplier's file; otherwise nothing is chosen
-      setOpciones(t.formato.propuesta ? { modalidad: t.formato.propuesta.modalidad, interpretacion: t.formato.propuesta.interpretacion, iva: String(t.formato.propuesta.iva), alternativa: "" } : { modalidad: "", interpretacion: "", iva: "", alternativa: "" });
+      const pr = t.formato.propuesta;
+      setOpciones(pr
+        ? { modalidad: pr.modalidad, interpretacion: pr.interpretacion, iva: String(pr.iva), alternativa: pr.alternativa ? `${pr.alternativa.modalidad}|${pr.alternativa.soloUnidad ? 1 : 0}` : "" }
+        : { modalidad: "", interpretacion: "", iva: "", alternativa: "" });
+      // a file without the owner's confirmed reading needs the detailed mode
+      if (!pr) setModo("avanzado");
       cambiarPaso(3);
     } catch (e) {
       setError(e.message);
@@ -199,7 +208,20 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase, tamanoL
   }, [lectura, catalogo, opciones.interpretacion, ivaNum]);
 
   const items = useMemo(() => comparacion?.items ?? [], [comparacion]);
-  const { operaciones, errores } = useMemo(() => construirOperaciones(items, decisiones, { tipos, guardarModalidades }), [items, decisiones, tipos, guardarModalidades]);
+  // simple mode applies the approved rules: add every new variant ("Sin clasificar" for new models),
+  // change existing prices only if the owner ticks it, leave everything else out
+  const decisionesEfectivas = useMemo(() => {
+    if (modo !== "sencillo") return decisiones;
+    return Object.fromEntries(items.flatMap((i) => (i.estado === "nueva" ? [[i.id, "anadir"]] : i.estado === "diferente" && actualizarPrecios ? [[i.id, "actualizar"]] : [])));
+  }, [modo, decisiones, items, actualizarPrecios]);
+  const tiposEfectivos = useMemo(
+    () => (modo !== "sencillo" ? tipos : Object.fromEntries(items.filter((i) => i.estado === "nueva" && !i.modeloId && !i.tipo).map((i) => [i.modeloClave, "Sin clasificar"]))),
+    [modo, tipos, items]
+  );
+  const { operaciones, errores } = useMemo(
+    () => construirOperaciones(items, decisionesEfectivas, { tipos: tiposEfectivos, guardarModalidades }),
+    [items, decisionesEfectivas, tiposEfectivos, guardarModalidades]
+  );
   const previsto = useMemo(() => resultadoPrevisto(operaciones, items), [operaciones, items]);
   const altas = useMemo(() => operaciones.filter((o) => o.accion === "alta"), [operaciones]);
   const modelosSinTipo = useMemo(
@@ -235,7 +257,7 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase, tamanoL
       const provId = proveedor?.id ?? (await listarProveedoresTarifa(sb)).find((p) => clave(p.nombre) === clave(nombreProveedor))?.id;
       const despues = provId ? await leerCatalogoProveedor(sb, provId) : { catalogo: [], tarifasActuales: {} };
       const itemsDespues = compararTarifa({ entradas: lectura.entradas, catalogo: despues.catalogo, opciones: opcionesCalculo, resoluciones: resolucionesEfectivas }).items;
-      setHecho({ id, ...verificarImportacion(ops, itemsDespues, despues.catalogo), total: ops.filter((o) => o.accion !== "tarifas" && o.accion !== "completar_modelo").length });
+      setHecho({ id, ...verificarImportacion(ops, itemsDespues, despues.catalogo), total: ops.filter((o) => o.accion !== "tarifas" && o.accion !== "completar_modelo").length, resumen: resultadoPrevisto(ops, items) });
       cambiarPaso(10);
     } catch (e) {
       setError(`La tarifa se aplicó (importación nº ${id}), pero no se ha podido comprobar el catálogo: ${e.message}`);
@@ -296,13 +318,129 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase, tamanoL
   const altasVista = altas.filter((o) => !filtro || clave(`${o.modelo.nombre} ${o.modelo.marca ?? ""} ${o.color} ${o.talla}`).includes(clave(filtro)));
   const listaPestana = items.filter((i) => i.estado === pestana && (!filtro || clave(`${i.modelo} ${i.referencia ?? ""} ${i.color} ${i.talla}`).includes(clave(filtro))));
 
+  const cajaParcial = parcial && (
+    <Aviso tipo="warning">
+      <p className="mb-2">
+        <strong>Importación incompleta.</strong> {parcial.mensaje} Se guardaron {parcial.lotesAplicados} de {parcial.lotes} lotes
+        {parcial.importacionId ? ` (importación nº ${parcial.importacionId})` : ""}; del lote {parcial.lotesAplicados + 1} no se guardó nada.
+      </p>
+      <div className="d-flex flex-wrap gap-2">
+        <button type="button" className="btn btn-sm btn-primary" disabled={Boolean(importando)} onClick={reanudar}>
+          {importando ? `Aplicando lote ${Math.min(importando.lote + 1, importando.lotes)} de ${importando.lotes}…` : `Reintentar desde el lote ${parcial.lotesAplicados + 1}`}
+        </button>
+        {parcial.importacionId && <button type="button" className="btn btn-sm btn-outline-danger" disabled={Boolean(importando)} onClick={revertirParcial}>Revertir lo ya guardado</button>}
+      </div>
+    </Aviso>
+  );
+
+  const empezarDeNuevo = () => {
+    setLectura(null);
+    setArchivo(null);
+    setCatalogo(null);
+    setHecho(null);
+    setDecisiones({});
+    setActualizarPrecios(false);
+    setError(null);
+    cambiarPaso(1);
+  };
+  const irAlDetalle = () => {
+    setModo("avanzado");
+    cambiarPaso(lectura ? 3 : 1);
+  };
+
+  // ---- simple mode figures
+  const cuenta = (estado) => comparacion?.resumen.porEstado[estado] ?? 0;
+  const cambiosPrincipales = previsto.altas + previsto.precios;
+  const n = (v) => v.toLocaleString("es-ES");
+  const pl = (v, uno, varios) => `${n(v)} ${v === 1 ? uno : varios}`;
+
+  const vistaSencilla = hecho ? (
+    <section aria-labelledby="t-hecho" className="gx-tarjeta p-4">
+      <h2 id="t-hecho" className="h4 d-flex align-items-center gap-2"><CheckCircle2 className="text-success" aria-hidden="true" />¡Hecho!</h2>
+      <p className="mb-1">
+        {pl(hecho.resumen?.altas ?? 0, "producto añadido", "productos añadidos")}{hecho.resumen?.precios ? ` y ${pl(hecho.resumen.precios, "precio actualizado", "precios actualizados")}` : ""} en el catálogo de {nombreProveedor}.
+      </p>
+      <p className="small text-muted">{hecho.fallos.length ? `Atención: ${hecho.fallos.length} cambios no se ven en el catálogo (${hecho.fallos.slice(0, 3).join("; ")}…).` : "Comprobado: todo está en el catálogo."}</p>
+      <div className="d-flex flex-wrap gap-2">
+        <Link to="/catalogo" className="btn btn-primary">Ver el catálogo</Link>
+        <Link to={`/catalogo/tarifas/${hecho.id}`} className="btn btn-outline-secondary">Ver o deshacer esta importación</Link>
+        <button type="button" className="btn btn-outline-secondary" onClick={empezarDeNuevo}>Importar otra tarifa</button>
+      </div>
+    </section>
+  ) : !lectura ? (
+    <section aria-labelledby="t-subir" className="gx-tarjeta p-4 text-center">
+      <FileSpreadsheet size={40} className="text-muted mb-2" aria-hidden="true" />
+      <h2 id="t-subir" className="h5">Sube la tarifa del proveedor</h2>
+      <p className="text-muted mb-3">El Excel que te envía el proveedor (por ahora ROLY o SOL'S). Se lee aquí mismo y no se guarda nada hasta que pulses «Importar».</p>
+      <label className="btn btn-primary btn-lg mb-0">
+        Elegir el archivo Excel
+        <input type="file" className="visually-hidden" aria-label="Excel de la tarifa (.xlsx)" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(e) => leerArchivo(e.target.files?.[0])} />
+      </label>
+    </section>
+  ) : !comparacion ? (
+    <Cargando texto="Comparando la tarifa con tu catálogo…" />
+  ) : (
+    <section aria-labelledby="t-resumen">
+      <h2 id="t-resumen" className="h5 mb-1">Tarifa de {nombreProveedor}</h2>
+      <p className="small text-muted">{archivo.nombre}{proveedor ? "" : " · proveedor nuevo: se creará al importar"}</p>
+      <div className="row g-3 mb-3">
+        {[
+          ["Productos nuevos", cuenta("nueva"), comparacion.resumen.modelosNuevos ? `de ${pl(comparacion.resumen.modelosNuevos, "modelo nuevo", "modelos nuevos")}; se añaden` : "se añaden al catálogo"],
+          ["Sin cambios", cuenta("igual"), "ya están con el mismo precio"],
+          ["Precios distintos", cuenta("diferente"), actualizarPrecios ? "se actualizarán" : "no se cambian salvo que lo marques"],
+          ["Para revisar", cuenta("ambigua") + cuenta("no_valida"), "no se importan (tallas sin detallar, datos dudosos o errores del Excel)"],
+        ].map(([titulo, valor, detalle]) => (
+          <div className="col-6 col-lg-3" key={titulo}>
+            <div className="gx-kpi"><div className="gx-kpi-etiqueta">{titulo}</div><div className="gx-kpi-valor">{n(valor)}</div><div className="gx-kpi-detalle">{detalle}</div></div>
+          </div>
+        ))}
+      </div>
+      <ul className="small text-muted">
+        <li>{lectura.formato.propuesta?.resumen}</li>
+        <li>Los modelos nuevos entran como «Sin clasificar»; el tipo de artículo se puede poner después en su ficha.</li>
+        {cuenta("descatalogada") > 0 && <li>{cuenta("descatalogada") === 1 ? "1 producto de tu catálogo no aparece en esta tarifa: se mantiene como está." : `${n(cuenta("descatalogada"))} productos de tu catálogo no aparecen en esta tarifa: se mantienen como están.`}</li>}
+        <li>No cambian los presupuestos guardados ni el inventario. Se puede deshacer desde el historial.</li>
+      </ul>
+      {cuenta("diferente") > 0 && (
+        <div className="form-check mb-3">
+          <input className="form-check-input" type="checkbox" id="actualizar-precios" checked={actualizarPrecios} onChange={(e) => setActualizarPrecios(e.target.checked)} />
+          <label className="form-check-label" htmlFor="actualizar-precios">{cuenta("diferente") === 1 ? "Actualizar también el precio que ha cambiado" : `Actualizar también los ${n(cuenta("diferente"))} precios que han cambiado`}</label>
+        </div>
+      )}
+      {avisoReversion && <Aviso tipo="info">{avisoReversion}</Aviso>}
+      {parcial ? cajaParcial : operaciones.length === 0 ? (
+        <Aviso tipo="success">Tu catálogo ya está al día con esta tarifa: no hay nada que importar.</Aviso>
+      ) : (
+        <button type="button" className="btn btn-primary btn-lg" disabled={Boolean(importando) || errores.length > 0} onClick={importar}>
+          {importando
+            ? `Importando… (${Math.min(importando.lote + 1, importando.lotes)} de ${importando.lotes})`
+            : cambiosPrincipales > 0 ? `Importar ${pl(previsto.altas, "producto", "productos")}${previsto.precios ? ` y ${pl(previsto.precios, "precio", "precios")}` : ""}` : "Guardar marcas y tarifas alternativas"}
+        </button>
+      )}
+      {errores.map((e) => <Aviso key={e} tipo="warning">{e}</Aviso>)}
+      <div className="d-flex flex-wrap gap-3 mt-3 small">
+        {!parcial && !importando && <button type="button" className="btn btn-link btn-sm p-0" onClick={empezarDeNuevo}>Cambiar de archivo</button>}
+        {!parcial && !importando && <button type="button" className="btn btn-link btn-sm p-0" onClick={irAlDetalle}>Revisar en detalle (modo avanzado)</button>}
+      </div>
+    </section>
+  );
+
   return (
     <>
       <Link to="/catalogo/tarifas" className="small d-inline-flex align-items-center gap-1 mb-2"><ArrowLeft size={14} aria-hidden="true" />Historial de tarifas</Link>
-      <Cabecera titulo="Importar tarifa de proveedor" descripcion="Analiza el Excel del proveedor, compáralo con el catálogo y decide qué se añade o se actualiza. Nada se guarda hasta el paso 9." />
+      <Cabecera titulo="Importar tarifa de proveedor"
+        descripcion={modo === "sencillo" ? "Sube el Excel del proveedor, revisa el resumen y pulsa Importar." : "Modo avanzado: revisa y decide cada línea. Nada se guarda hasta el paso 9."} />
       <NavCatalogo />
-      <Pasos paso={paso} />
+      {modo === "avanzado" && <Pasos paso={paso} />}
       {error && <Aviso tipo="danger">{error}</Aviso>}
+      {modo === "sencillo" ? (
+        <>
+          {vistaSencilla}
+          {!lectura && !hecho && <button type="button" className="btn btn-link btn-sm p-0 mt-3" onClick={irAlDetalle}>Usar el modo avanzado (revisar línea a línea)</button>}
+        </>
+      ) : (
+      <>
+      <button type="button" className="btn btn-link btn-sm p-0 mb-2" onClick={() => setModo("sencillo")}>← Volver al modo sencillo</button>
 
       {paso === 1 && (
         <section aria-labelledby="t-proveedor">
@@ -621,7 +759,7 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase, tamanoL
             {previsto.modelosCompletados > 0 && <li>{previsto.modelosCompletados} modelos existentes reciben la marca o la referencia que les faltaba (no se sobrescribe nada)</li>}
             {Object.keys(previsto.porModalidad).length > 1 && <li>Precio según modalidad: {Object.entries(previsto.porModalidad).map(([m, n]) => `${m} ${n}`).join(" · ")}</li>}
           </ul>
-          <p className="small">Precio usado en presupuestos: modalidad <strong>{lectura.formato.modalidades.find((m) => m.id === opciones.modalidad)?.nombre}</strong>, {INTERPRETACIONES[opciones.interpretacion].toLowerCase()}, IVA {ivaNum} %.</p>
+          <p className="small">Precio usado en presupuestos: modalidad <strong>{lectura.formato.modalidades.find((m) => m.id === opciones.modalidad)?.nombre}</strong>, {INTERPRETACIONES[opciones.interpretacion]}, IVA {ivaNum} %.</p>
           <Aviso tipo="info">No cambian: presupuestos guardados (conservan su precio), existencias, reservas ni movimientos de inventario.</Aviso>
           {conflictos.some((i) => i.conflicto === "grupo") && (
             <Aviso tipo="warning">{conflictos.filter((i) => i.conflicto === "grupo").length} líneas con tallas agrupadas siguen pendientes y no se importarán (paso 6).</Aviso>
@@ -643,7 +781,10 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase, tamanoL
               <Paginacion total={altasVista.length} pagina={pagina} onCambiar={setPagina} etiqueta="Páginas de variantes nuevas" />
             </>
           )}
-          {errores.map((e) => <Aviso key={e} tipo="warning">{e}</Aviso>)}
+          {errores.filter((e) => !e.startsWith("Indica el tipo")).map((e) => <Aviso key={e} tipo="warning">{e}</Aviso>)}
+          {errores.some((e) => e.startsWith("Indica el tipo")) && (
+            <Aviso tipo="warning">Falta el tipo de artículo en {errores.filter((e) => e.startsWith("Indica el tipo")).length} modelos nuevos: ponlo en el paso 7 (puedes usar «Sin clasificar» para todos).</Aviso>
+          )}
           <Navegar paso={paso} setPaso={cambiarPaso} puedeSeguir={errores.length === 0 && operaciones.length > 0} />
         </section>
       )}
@@ -658,18 +799,7 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase, tamanoL
           </p>
           {avisoReversion && <Aviso tipo="info">{avisoReversion}</Aviso>}
           {parcial ? (
-            <Aviso tipo="warning">
-              <p className="mb-2">
-                <strong>Importación incompleta.</strong> {parcial.mensaje} Se guardaron {parcial.lotesAplicados} de {parcial.lotes} lotes
-                {parcial.importacionId ? ` (importación nº ${parcial.importacionId})` : ""}; del lote {parcial.lotesAplicados + 1} no se guardó nada.
-              </p>
-              <div className="d-flex flex-wrap gap-2">
-                <button type="button" className="btn btn-sm btn-primary" disabled={Boolean(importando)} onClick={reanudar}>
-                  {importando ? `Aplicando lote ${Math.min(importando.lote + 1, importando.lotes)} de ${importando.lotes}…` : `Reintentar desde el lote ${parcial.lotesAplicados + 1}`}
-                </button>
-                {parcial.importacionId && <button type="button" className="btn btn-sm btn-outline-danger" disabled={Boolean(importando)} onClick={revertirParcial}>Revertir lo ya guardado</button>}
-              </div>
-            </Aviso>
+            cajaParcial
           ) : (
             <div className="d-flex gap-2">
               <button type="button" className="btn btn-outline-secondary" onClick={() => cambiarPaso(8)}>Atrás</button>
@@ -688,6 +818,8 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase, tamanoL
           </Aviso>
           <Link to={`/catalogo/tarifas/${hecho.id}`} className="btn btn-primary">Ver el registro de la importación</Link>
         </section>
+      )}
+      </>
       )}
     </>
   );

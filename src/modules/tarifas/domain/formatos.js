@@ -83,8 +83,9 @@ const ROLY = {
     { id: "unidad", nombre: "Unidad" },
   ],
   propuesta: {
-    modalidad: "unidad", interpretacion: "neto", iva: 21,
-    nota: "Confirmado por el propietario para la tarifa ROLY: precios sin IVA, IVA de compra 21 %. Unidad es la modalidad propuesta (coincide con los precios ya usados); Caja y Pack se guardan como alternativas.",
+    modalidad: "unidad", interpretacion: "neto", iva: 21, alternativa: { modalidad: "pack", soloUnidad: true },
+    nota: "Confirmado por el propietario para la tarifa ROLY: precios sin IVA, IVA de compra 21 %. Precio por Unidad; si no lo hay, el de Pack solo cuando el pack es de 1 unidad. Caja y Pack se guardan como alternativas.",
+    resumen: "Precio por unidad sin IVA + 21 % de IVA (si no hay precio por unidad, el del pack de 1 unidad).",
   },
   detectar: (filas) =>
     buscarCabecera(filas, {
@@ -171,7 +172,11 @@ const SOLS = {
   proveedor: "SOL'S",
   descripcion: "Tarifa SOL'S (Brand · Género · Ref · Nombre · Color · Talla · Tu Tarifa)",
   modalidades: [{ id: "tarifa", nombre: "Tarifa" }],
-  propuesta: { modalidad: "tarifa", interpretacion: "neto", iva: 21, nota: "Confirmado por el propietario para la tarifa SOL'S: precios sin IVA, IVA de compra 21 %." },
+  propuesta: {
+    modalidad: "tarifa", interpretacion: "neto", iva: 21,
+    nota: "Confirmado por el propietario para la tarifa SOL'S: precios sin IVA, IVA de compra 21 %.",
+    resumen: "Precio de tarifa sin IVA + 21 % de IVA.",
+  },
   detectar: (filas) =>
     buscarCabecera(filas, { marca: ["BRAND", "MARCA"], genero: ["GENERO"], ref: ["REF"], nombre: ["NOMBRE"], color: ["COLOR"], talla: ["TALLA"], precio: ["TU TARIFA", "TARIFA"] }),
   leer: (filas, { fila: cab, columnas: c }) => {
