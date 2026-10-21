@@ -19,7 +19,7 @@ const insertarCliente = (tx, datos = {}) =>
 
 describe("migraciones", () => {
   it("se aplican en orden y crean el esquema esperado", async () => {
-    expect(listarMigraciones()).toEqual(["20261015120000_esquema_inicial.sql", "20261015120100_almacenamiento.sql", "20261016090000_parametros_calculo.sql", "20261017090000_presupuestos_ciclo_vida.sql", "20261018090000_catalogo_precio_neto.sql", "20261021090000_catalogo_gestion.sql", "20261022090000_inventario.sql", "20261023090000_tarifas_proveedor.sql"]);
+    expect(listarMigraciones()).toEqual(["20261015120000_esquema_inicial.sql", "20261015120100_almacenamiento.sql", "20261016090000_parametros_calculo.sql", "20261017090000_presupuestos_ciclo_vida.sql", "20261018090000_catalogo_precio_neto.sql", "20261021090000_catalogo_gestion.sql", "20261022090000_inventario.sql", "20261023090000_tarifas_proveedor.sql", "20261024090000_importaciones_sin_ciclo.sql"]);
     const { rows } = await db.query("select tablename from pg_tables where schemaname = 'public' order by tablename");
     expect(rows.map((r) => r.tablename)).toEqual([
       "clientes", "configuracion", "contadores", "importaciones", "importaciones_cambios", "modelos", "parametros_calculo", "presupuestos", "propietario", "proveedores", "registro_copias", "stock_articulos", "stock_movimientos", "stock_necesidades", "stock_reservas", "variantes", "variantes_tarifas",
@@ -31,6 +31,23 @@ describe("migraciones", () => {
       "select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind = 'r' and not c.relrowsecurity"
     );
     expect(rows).toEqual([]);
+  });
+
+  it("no hay ciclos de claves foráneas entre tablas (la copia de solo datos debe poder restaurarse)", async () => {
+    const { rows } = await db.query(`select distinct c.conrelid::regclass::text desde, c.confrelid::regclass::text hacia
+      from pg_constraint c join pg_namespace n on n.oid = c.connamespace
+      where c.contype = 'f' and n.nspname = 'public' and c.conrelid <> c.confrelid`);
+    const aristas = {};
+    for (const r of rows) (aristas[r.desde] ??= []).push(r.hacia);
+    const ciclos = [];
+    const visitar = (nodo, camino) => {
+      for (const sig of aristas[nodo] ?? []) {
+        if (camino.includes(sig)) ciclos.push([...camino.slice(camino.indexOf(sig)), sig].join(" -> "));
+        else visitar(sig, [...camino, sig]);
+      }
+    };
+    for (const t of Object.keys(aristas)) visitar(t, [t]);
+    expect(ciclos).toEqual([]);
   });
 
   it("las vistas usan security_invoker (respetan RLS)", async () => {

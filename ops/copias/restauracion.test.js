@@ -34,6 +34,17 @@ beforeAll(async () => {
     await tx.query("select public.stock_reservar($1, 5, 'PED-FICTICIO')", [variante]);
   });
   await origen.exec("insert into public.registro_copias (tipo, estado, detalle) values ('base_datos', 'correcta', '{\"prueba\": true}')");
+  // As in production: suppliers created by a catalogue import (proveedores -> importaciones) and a
+  // price-list import of a supplier (importaciones -> proveedores). Both must restore.
+  const imp = (await origen.query("insert into public.importaciones (tipo, resumen) values ('catalogo_firestore', '{}') returning id")).rows[0].id;
+  await origen.query("update public.proveedores set importacion_id = $1", [imp]);
+  await comoPropietario(origen, async (tx) => {
+    const prov = (await tx.query("select min(id) id from public.proveedores")).rows[0].id;
+    await tx.query("select public.importar_tarifa($1::jsonb, $2::jsonb, gen_random_uuid(), 1, 1)", [
+      JSON.stringify({ proveedor_id: prov, modalidad: "tarifa", interpretacion: "neto", iva: 21 }),
+      JSON.stringify([{ accion: "alta", modelo: { nombre: "Modelo de tarifa ficticio", tipo: "Sin clasificar", marca: "Marca Ficticia" }, color: "ROJO", talla: "M", precio: { precio_neto: 1.5, iva_porcentaje: 21 }, modalidad: "tarifa", tarifas: [{ modalidad: "tarifa", precio: 1.5 }] }]),
+    ]);
+  });
 
   // 2. Source manifest, then the backup with the real pg_dump. (The WASM pg_dump
   // leaves this in-process session read-only, so the manifest is taken first;
@@ -54,7 +65,7 @@ describe("volcado", () => {
     expect(copia.esquema).toMatch(/CREATE TABLE public\.presupuestos/);
     expect((copia.esquema.match(/ENABLE ROW LEVEL SECURITY/g) ?? []).length).toBe(17);
     expect((copia.esquema.match(/CREATE POLICY/g) ?? []).length).toBe(26);
-    expect((copia.datos.match(/^INSERT INTO public\.variantes/gm) ?? []).length).toBe(36);
+    expect((copia.datos.match(/^INSERT INTO public\.variantes \(/gm) ?? []).length).toBe(37);
     expect(copia.datos).toMatch(/OVERRIDING SYSTEM VALUE/);
     expect(copia.datos).toMatch(/setval\('public\.clientes_id_seq'/);
   });
@@ -120,7 +131,7 @@ describe("restauración en una base de datos aislada", () => {
     const lineas = copia.datos.split("\n");
     const sinUnaFila = lineas.filter((l, i) => i !== lineas.findIndex((x) => x.startsWith("INSERT INTO public.variantes"))).join("\n");
     const db = await restaurarConEsquema({ esquema: copia.esquema, datos: sinUnaFila });
-    expect(compararManifiestos(manifiestoOrigen, await calcularManifiesto(db))).toContain("variantes: 36 rows in source, 35 restored");
+    expect(compararManifiestos(manifiestoOrigen, await calcularManifiesto(db))).toContain("variantes: 37 rows in source, 36 restored");
     await db.close();
 
     const alterada = copia.datos.replace("3390", "3391");

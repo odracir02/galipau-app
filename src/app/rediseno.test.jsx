@@ -121,7 +121,7 @@ describe("estructura y navegación", () => {
     expect(screen.getByRole("link", { name: "Formulario de presupuesto antiguo" }).getAttribute("href")).toBe("/antiguo");
     cleanup();
     await entrar("/copias");
-    expect(window.location.pathname).toBe("/configuracion/copias");
+    await waitFor(() => expect(window.location.pathname).toBe("/configuracion/copias")); // the redirect runs after rendering
   });
 });
 
