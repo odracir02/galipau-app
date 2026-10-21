@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { MARCA } from "../marca";
+import BandaEntorno from "../BandaEntorno";
 
 // Centred card shared by the access states
 const Marco = ({ children }) => (
-  <div className="gx-acceso">
+  <div className="gx-acceso flex-column">
+    <BandaEntorno flotante />
     <div className="gx-acceso-tarjeta">
       <div className="d-flex align-items-center gap-3 mb-3">
         <img src={MARCA.logo} alt="" />

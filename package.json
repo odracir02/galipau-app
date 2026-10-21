@@ -14,7 +14,8 @@
     "copias": "node --env-file-if-exists=.env server/scripts/copias.js",
     "contrasena:restablecer": "node --env-file-if-exists=.env server/scripts/restablecer-contrasena.js",
     "sql:instalacion": "node ops/produccion/generar-instalacion.mjs",
-    "verificar:nube": "node ops/produccion/verificar.mjs"
+    "verificar:nube": "node ops/produccion/verificar.mjs",
+    "verificar:despliegue": "node ops/produccion/verificar-despliegue.mjs"
   },
   "dependencies": {
     "@fontsource-variable/inter": "5.3.0",

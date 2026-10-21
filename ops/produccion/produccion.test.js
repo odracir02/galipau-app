@@ -3,6 +3,7 @@ import { PGlite } from "@electric-sql/pglite";
 import fs from "node:fs";
 import { generarInstalacion, listar } from "./generar-instalacion.mjs";
 import { verificarProyecto, TABLAS, FUNCIONES } from "./verificar.mjs";
+import { analizarDespliegue, comprobarDespliegue } from "./verificar-despliegue.mjs";
 
 describe("SQL de instalación en un solo archivo", () => {
   it("incluye todas las migraciones en orden, dentro de una transacción, y se aplica en una base de datos vacía", async () => {
@@ -70,5 +71,30 @@ describe("verificación externa de un proyecto (como visitante anónimo)", () =>
 
   it("rechaza una clave secreta", async () => {
     await expect(verificarProyecto({ ...base, clave: "sb_secret_abc", fetch: fetchFalso() })).rejects.toThrow(/SECRETA/);
+  });
+});
+
+describe("verificación de un despliegue web (a qué Supabase apunta)", () => {
+  const sitio = (ficheros) => async (url) => ({ text: async () => ficheros[new URL(url).pathname] ?? "" });
+  const REF_A = "aaaaaaaaaaaaaaaaaaaa";
+  const REF_B = "bbbbbbbbbbbbbbbbbbbb";
+
+  it("encuentra el proyecto en el script principal y en los fragmentos que importa", async () => {
+    const f = sitio({
+      "/": '<html><script type="module" src="/assets/index-1.js"></script></html>',
+      "/assets/index-1.js": 'import("./assets/cliente-2.js")',
+      "/assets/cliente-2.js": `const u="https://${REF_A}.supabase.co"`,
+    });
+    const a = await analizarDespliegue("https://web.example/", { fetch: f });
+    expect(a.refs).toEqual([REF_A]);
+    expect(comprobarDespliegue(a, REF_A)).toEqual([]);
+  });
+
+  it("detecta una web que apunta al proyecto equivocado o a los dos", async () => {
+    const mezcla = sitio({ "/": '<script src="/assets/i.js"></script>', "/assets/i.js": `"https://${REF_A}.supabase.co";"https://${REF_B}.supabase.co"` });
+    const a = await analizarDespliegue("https://web.example", { fetch: mezcla });
+    expect(comprobarDespliegue(a, REF_A)).toEqual([`Apunta a otro proyecto de Supabase: ${REF_B}.`]);
+    expect(comprobarDespliegue({ refs: [REF_B] }, REF_A)).toHaveLength(2);
+    await expect(analizarDespliegue("https://web.example", { fetch: sitio({ "/": "<html></html>" }) })).rejects.toThrow(/No se encuentra/);
   });
 });

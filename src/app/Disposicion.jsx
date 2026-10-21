@@ -5,6 +5,7 @@ import { useSesion } from "./sesion/contexto";
 import { useTema } from "./tema/contexto";
 import { MARCA } from "./marca";
 import { ENLACE_CONFIGURACION, NAVEGACION_LOCAL, NAVEGACION_NUBE } from "./navegacion";
+import BandaEntorno from "./BandaEntorno";
 
 const clase = (extra = "") => ({ isActive }) => `gx-nav-enlace ${extra} ${isActive ? "active" : ""}`;
 
@@ -65,6 +66,7 @@ function Disposicion({ nube = false, children }) {
       {menuAbierto && <div className="gx-velo" onClick={() => setMenuAbierto(false)} aria-hidden="true" />}
 
       <div className="gx-principal">
+        <BandaEntorno />
         <header className="gx-superior">
           <button type="button" className="gx-boton-icono gx-solo-movil" aria-label="Abrir menú" aria-controls="gx-menu" aria-expanded={menuAbierto} onClick={() => setMenuAbierto(true)}>
             <Menu size={20} />

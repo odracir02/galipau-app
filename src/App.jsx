@@ -5,6 +5,7 @@ import ProveedorSesion from "./app/sesion/ProveedorSesion";
 import ProveedorTema from "./app/tema/ProveedorTema";
 import ProveedorDialogos from "./shared/ui/ProveedorDialogos";
 import Disposicion from "./app/Disposicion";
+import GuardaEntorno from "./app/GuardaEntorno";
 import PaginaCopias from "./modules/copias/PaginaCopias";
 import PaginaCopiasNube from "./modules/copias/PaginaCopiasNube";
 import PaginaCalculadoraSerigrafia from "./modules/calculadora/PaginaCalculadoraSerigrafia";
@@ -40,6 +41,7 @@ function App({ servicioSesion }) {
       <ProveedorTema>
         <ProveedorSesion servicio={servicioSesion}>
           <ProveedorDialogos>
+            <GuardaEntorno nube={nube}>
             <Disposicion nube={nube}>
               <Routes>
                 {nube ? (
@@ -83,6 +85,7 @@ function App({ servicioSesion }) {
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </Disposicion>
+            </GuardaEntorno>
           </ProveedorDialogos>
         </ProveedorSesion>
       </ProveedorTema>

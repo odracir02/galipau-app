@@ -349,3 +349,14 @@ a:hover { text-decoration: underline; }
 /* Settings sections: their title sits below the page title */
 .gx-configuracion h2 { font-size: 1.2rem; }
 .gx-configuracion > .container > h2:first-child, .gx-configuracion > h2:first-child { margin-bottom: 0.5rem; }
+
+/* ---------- Test environment stripe ---------- */
+.gx-banda-pruebas {
+  display: flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.45rem 1rem;
+  background: repeating-linear-gradient(-45deg, #f0a400, #f0a400 14px, #e09400 14px, #e09400 28px);
+  color: #1f1600; font-weight: 750; font-size: 0.8rem; letter-spacing: 0.06em; text-transform: uppercase; text-align: center;
+  position: sticky; top: 0; z-index: 1031;
+}
+.gx-banda-flotante { position: fixed; left: 0; right: 0; top: 0; }
+[data-entorno="pruebas"] .gx-lateral { border-top: 6px solid #f0a400; }
+[data-entorno="pruebas"] .gx-superior { top: 34px; }

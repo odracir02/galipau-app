@@ -35,6 +35,7 @@ Galipau App is a single-owner web application. It is moving to a **cloud deploym
   - use a test Supabase project for preview deployments and the production project for production;
   - React Router routes are served by the Pages single-page-application fallback;
   - security headers are defined in `public/_headers`.
+- **Test web:** a second Pages project built with `VITE_ENTORNO=pruebas` against the test Supabase project shows a permanent "test environment" stripe; after login the app refuses to run if the web and the database belong to different environments (the database is marked in `configuracion.entorno`). `npm run verificar:despliegue -- <url> <project-ref>` checks which Supabase project a deployed web points to.
 - **Production helpers:** `npm run sql:instalacion` writes all migrations as one transactional SQL file (to a git-ignored folder) for the Supabase SQL Editor; `npm run verificar:nube` checks a project from the outside, as an anonymous visitor, using only its public URL and publishable key.
 - **Sample data:** `supabase/datos-ficticios.sql` contains fictitious data for the test project only. It refuses to run on a database marked as production.
 
