@@ -17,12 +17,19 @@ const fecha = (iso) => (iso ? new Date(iso).toLocaleString("es-ES", { dateStyle:
 const NOMBRE_ACCION = { alta_proveedor: "Proveedor nuevo", alta_modelo: "Modelo nuevo", alta_variante: "Variante nueva", precio: "Precio", archivar: "Archivada", tarifas: "Modalidades", datos_modelo: "Marca / referencia" };
 const NOMBRE_REVERSION = {
   precios_restaurados: "precios restaurados", precios_conservados: "precios conservados (cambiados después)", variantes_borradas: "variantes nuevas retiradas",
-  variantes_archivadas: "variantes archivadas (en uso)", reactivadas: "variantes reactivadas", tarifas_restauradas: "modalidades restauradas",
+  variantes_archivadas: "variantes archivadas (en uso)", variantes_conservadas: "variantes conservadas (cambiadas después)", reactivadas: "variantes reactivadas", tarifas_restauradas: "modalidades restauradas",
   modelos_borrados: "modelos retirados", proveedores_borrados: "proveedores retirados", datos_modelo_restaurados: "marcas o referencias vaciadas",
 };
 
+const incompleta = (imp) => imp.resumen?.estado === "en_curso";
 const Estado = ({ imp }) =>
-  imp.revertida_en ? <span className="gx-insignia gx-estado-importado">Revertida {fecha(imp.revertida_en)}</span> : <span className="gx-insignia gx-estado-aceptado">Aplicada</span>;
+  imp.revertida_en ? (
+    <span className="gx-insignia gx-estado-importado">Revertida {fecha(imp.revertida_en)}{incompleta(imp) ? " (estaba incompleta)" : ""}</span>
+  ) : incompleta(imp) ? (
+    <span className="gx-insignia gx-estado-en_produccion">Incompleta: {imp.resumen.lotes_aplicados} de {imp.resumen.lotes_total} lotes</span>
+  ) : (
+    <span className="gx-insignia gx-estado-aceptado">Aplicada</span>
+  );
 
 /** History of supplier price-list imports */
 export function PaginaTarifas({ obtenerCliente = obtenerClienteSupabase }) {
@@ -146,6 +153,12 @@ export function PaginaImportacionTarifa({ obtenerCliente = obtenerClienteSupabas
             acciones={!imp.revertida_en && <button type="button" className="btn btn-outline-danger" disabled={revirtiendo} onClick={revertir}>{revirtiendo ? "Revirtiendo…" : "Revertir"}</button>}>
             <Estado imp={imp} />
           </Cabecera>
+          {incompleta(imp) && !imp.revertida_en && (
+            <Aviso tipo="warning">
+              Esta importación se detuvo a mitad: se guardaron {imp.resumen.lotes_aplicados} de {imp.resumen.lotes_total} lotes completos (de un lote fallido no se guarda nada).
+              Puedes revertir lo aplicado, o volver a importar el mismo archivo: lo que ya entró aparecerá como «precio igual» y solo se añadirá lo que falta, sin duplicados.
+            </Aviso>
+          )}
           <dl className="row small">
             <dt className="col-sm-3">Archivo</dt><dd className="col-sm-9">{r.archivo?.nombre} · formato {r.archivo?.formato} · hoja «{r.archivo?.hoja}» · SHA-256 <code className="text-break">{r.archivo?.sha256}</code></dd>
             <dt className="col-sm-3">Precio usado</dt><dd className="col-sm-9">Modalidad {r.modalidad} · {INTERPRETACIONES[r.interpretacion] ?? r.interpretacion} · IVA {r.iva} %</dd>

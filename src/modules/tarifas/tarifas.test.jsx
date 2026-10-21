@@ -168,6 +168,83 @@ describe("asistente de importación de tarifas", () => {
   });
 });
 
+describe("fallo a mitad de una importación por lotes", () => {
+  const preparar = ({ fallarLote }) => {
+    const llamadas = [];
+    const aplicados = {};
+    let fallos = 0;
+    const sb = crearClienteFalso({
+      tablas: {
+        proveedores: [{ id: 1, nombre: "SOL'S", activo: true }],
+        v_catalogo_admin: [fila(1, "BLANCO", "M", 2.1), fila(2, "COLOR", "M", 2.3)],
+        variantes_tarifas: [], importaciones: [], importaciones_cambios: [],
+      },
+      rpcs: {
+        // emulates the database: numbered batches under one key, repeated batches do nothing
+        importar_tarifa: ({ p_clave, p_lote, p_total }, tablas) => {
+          llamadas.push(p_lote);
+          if (p_lote === fallarLote && fallos === 0) {
+            fallos++;
+            return { data: null, error: { code: "P0002", message: "Variant 2 not found" } };
+          }
+          if (p_lote > (aplicados[p_clave] ?? 0)) aplicados[p_clave] = p_lote;
+          if (!tablas.importaciones.length) tablas.importaciones.push({ id: 7, clave: p_clave, tipo: "tarifa_proveedor", resumen: { estado: "en_curso", lotes_total: p_total } });
+          return { data: 7, error: null };
+        },
+        revertir_tarifa: ({ p_importacion_id }) => {
+          llamadas.push(`revertir ${p_importacion_id}`);
+          return { data: { variantes_borradas: 0 }, error: null };
+        },
+      },
+    });
+    return { sb, llamadas, aplicados };
+  };
+  const hastaConfirmar = async (user, sb) => {
+    render(
+      <MemoryRouter initialEntries={["/catalogo/tarifas/importar"]}>
+        <ProveedorDialogos>
+          <Routes><Route path="/catalogo/tarifas/importar" element={<PaginaImportarTarifa obtenerCliente={async () => sb} tamanoLote={1} />} /></Routes>
+        </ProveedorDialogos>
+      </MemoryRouter>
+    );
+    await user.click(screen.getByRole("button", { name: "Siguiente" }));
+    await user.upload(screen.getByLabelText("Excel de la tarifa (.xlsx)"), new File([crearXlsx([{ nombre: "Tarifa", filas: TARIFA_SOLS_FICTICIA }])], "tarifa-ficticia.xlsx"));
+    await screen.findByText(/formato SOL'S/);
+    await screen.findByText("2 variantes");
+    for (let i = 0; i < 4; i++) await user.click(screen.getByRole("button", { name: "Siguiente" })); // 3 -> 7
+    await user.selectOptions(screen.getByLabelText("Decisión para ORION COLOR M"), "actualizar");
+    await user.click(screen.getByRole("button", { name: "Siguiente" }));
+    await user.click(screen.getByRole("button", { name: "Siguiente" }));
+    await user.click(screen.getByRole("button", { name: "Aplicar tarifa" }));
+    await user.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Aplicar tarifa" }));
+  };
+
+  it("se detecta la importación parcial y se reanuda desde el lote fallido con las mismas operaciones, sin duplicar", async () => {
+    const user = userEvent.setup();
+    const { sb, llamadas, aplicados } = preparar({ fallarLote: 2 });
+    await hastaConfirmar(user, sb);
+    const aviso = await screen.findByText(/Importación incompleta/);
+    expect(aviso.closest(".alert").textContent).toMatch(/Se guardaron 1 de 3 lotes \(importación nº 7\); del lote 2 no se guardó nada/);
+    expect(screen.queryByRole("button", { name: "Aplicar tarifa" })).toBeNull(); // no new import over a partial one
+    await user.click(screen.getByRole("button", { name: "Reintentar desde el lote 2" }));
+    expect(await screen.findByText(/Tarifa aplicada \(importación nº 7\)/)).toBeTruthy();
+    expect(llamadas).toEqual([1, 2, 2, 3]);
+    expect(Object.values(aplicados)).toEqual([3]); // one key: a single import
+  });
+
+  it("o se revierte lo ya guardado y se vuelve a leer el catálogo", async () => {
+    const user = userEvent.setup();
+    const { sb, llamadas } = preparar({ fallarLote: 3 });
+    await hastaConfirmar(user, sb);
+    await screen.findByText(/Importación incompleta/);
+    await user.click(screen.getByRole("button", { name: "Revertir lo ya guardado" }));
+    await user.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Revertir" }));
+    expect(await screen.findByText(/Importación nº 7 revertida/)).toBeTruthy();
+    expect(llamadas).toEqual([1, 2, 3, "revertir 7"]);
+    expect(screen.getByRole("button", { name: "Aplicar tarifa" })).toBeTruthy();
+  });
+});
+
 describe("historial de tarifas", () => {
   const conHistorial = () => {
     let revertida = false;
@@ -200,6 +277,22 @@ describe("historial de tarifas", () => {
     expect(await screen.findByText(/ORION · COLOR · M/)).toBeTruthy();
     expect(screen.getByRole("table").textContent).toMatch(/2,30\s€ \+ 21 % IVA → 2,40\s€ \+ 21 % IVA/);
     expect(screen.getByText("f".repeat(64))).toBeTruthy();
+  });
+
+  it("una importación que se detuvo a mitad se marca como incompleta, con sus lotes", async () => {
+    const sb = crearClienteFalso({
+      tablas: {
+        proveedores: [{ id: 1, nombre: "SOL'S", activo: true }],
+        importaciones: [{ id: 8, tipo: "tarifa_proveedor", creada_en: "2026-10-21T10:00:00Z", proveedor_id: 1, revertida_en: null, resumen: { estado: "en_curso", lotes_aplicados: 2, lotes_total: 7, archivo: { nombre: "t.xlsx" } } }],
+        importaciones_cambios: [], v_catalogo_admin: [],
+      },
+    });
+    montar(sb, "/catalogo/tarifas");
+    expect((await screen.findByRole("table")).textContent).toMatch(/Incompleta: 2 de 7 lotes/);
+    cleanup();
+    montar(sb, "/catalogo/tarifas/8");
+    expect((await screen.findByText(/se detuvo a mitad/)).textContent).toMatch(/2 de 7 lotes/);
+    expect(screen.getByRole("button", { name: "Revertir" })).toBeTruthy();
   });
 
   it("revertir pide confirmación e informa de lo que se ha hecho", async () => {

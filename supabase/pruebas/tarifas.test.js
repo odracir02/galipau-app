@@ -20,7 +20,7 @@ afterEach(async () => {
 
 const META = { modalidad: "caja", interpretacion: "neto", archivo: { nombre: "tarifa-ficticia.xlsx", sha256: "a".repeat(64), formato: "prueba" }, resumen: { altas: 1 } };
 const importar = (tx, operaciones, meta = {}) =>
-  tx.query("select public.importar_tarifa($1::jsonb, $2::jsonb) id", [JSON.stringify({ ...META, proveedor_id: B.proveedor, ...meta }), JSON.stringify(operaciones)]).then((r) => r.rows[0].id);
+  tx.query("select public.importar_tarifa($1::jsonb, $2::jsonb, gen_random_uuid(), 1, 1) id", [JSON.stringify({ ...META, proveedor_id: B.proveedor, ...meta }), JSON.stringify(operaciones)]).then((r) => r.rows[0].id);
 const revertir = (tx, id) => tx.query("select public.revertir_tarifa($1) r", [id]).then((r) => r.rows[0].r);
 const variante = (tx, id) =>
   tx.query("select activo, precio_neto::float neto, iva_porcentaje::float iva, coste_cent from public.variantes where id = $1", [id]).then((r) => r.rows[0]);
@@ -65,7 +65,7 @@ describe("importar una tarifa", () => {
       const sinRef = (await tx.query("insert into public.modelos (proveedor_id, tipo, nombre) values ($1, 'Gorra', 'Gorra Lisa') returning id", [B.proveedor])).rows[0].id;
       await importar(tx, [{ accion: "alta", modelo: { nombre: "gorra lisa", referencia: "G9", tipo: "Gorra" }, color: "ROJO", talla: "TU", precio: { precio_neto: 1, iva_porcentaje: 21 } }]);
       expect((await tx.query("select referencia from public.modelos where id = $1", [sinRef])).rows[0].referencia).toBe("G9");
-      await tx.query("select public.importar_tarifa($1::jsonb, $2::jsonb)", [
+      await tx.query("select public.importar_tarifa($1::jsonb, $2::jsonb, gen_random_uuid(), 1, 1)", [
         JSON.stringify({ ...META, proveedor_nombre: "Proveedor Nuevo Ficticio" }),
         JSON.stringify([{ accion: "alta", modelo: { nombre: "Polo", tipo: "Polo" }, color: "AZUL", talla: "S", precio: { precio_neto: 4, iva_porcentaje: 21 } }]),
       ]);
@@ -140,26 +140,73 @@ describe("seguridad", () => {
   });
 });
 
-describe("tarifas grandes por lotes", () => {
-  it("varios lotes forman una sola importación, que se cierra con el último y se revierte entera", async () => {
-    const alta = (n) => ({ accion: "alta", modelo: { nombre: `Modelo ${Math.floor(n / 4)}`, referencia: `R${Math.floor(n / 4)}`, tipo: "Camiseta", marca: "Marca Ficticia" }, color: "NEGRO", talla: ["S", "M", "L", "XL"][n % 4], precio: { precio_neto: 1.2345, iva_porcentaje: 21 }, tarifas: TARIFAS(1.2345) });
-    const ops = Array.from({ length: 1200 }, (_, n) => alta(n));
-    const lote = (tx, desde, hasta, id, completa) =>
-      tx.query("select public.importar_tarifa($1::jsonb, $2::jsonb, $3) id", [JSON.stringify(id ? { completa } : { ...META, proveedor_id: B.proveedor, completa }), JSON.stringify(ops.slice(desde, hasta)), id]).then((r) => r.rows[0].id);
-    const id = await comoPropietario(db, (tx) => lote(tx, 0, 500, null, false));
-    expect(await comoPropietario(db, (tx) => lote(tx, 500, 1000, id, false))).toBe(id);
-    await comoPropietario(db, (tx) => lote(tx, 1000, 1200, id, true));
+describe("tarifas grandes por lotes: fallo a mitad y recuperación", () => {
+  const CLAVE = "5b0d8c1e-0000-4000-8000-000000000001";
+  const alta = (n) => ({ accion: "alta", modelo: { nombre: `Modelo ${Math.floor(n / 4)}`, referencia: `R${Math.floor(n / 4)}`, tipo: "Sin clasificar", marca: "Marca Ficticia" }, color: "NEGRO", talla: ["S", "M", "L", "XL"][n % 4], precio: { precio_neto: 1.2345, iva_porcentaje: 21 }, modalidad: "unidad", tarifas: TARIFAS(1.2345) });
+  const OPS = Array.from({ length: 1200 }, (_, n) => alta(n));
+  const LOTES = [OPS.slice(0, 500), OPS.slice(500, 1000), OPS.slice(1000)];
+  const lote = (n, ops = LOTES[n - 1], clave = CLAVE) =>
+    comoPropietario(db, (tx) => tx.query("select public.importar_tarifa($1::jsonb, $2::jsonb, $3, $4, 3) id", [JSON.stringify({ ...META, proveedor_id: B.proveedor }), JSON.stringify(ops), clave, n]).then((r) => r.rows[0].id));
+  const estado = (id) => comoPropietario(db, (tx) => tx.query("select resumen ->> 'estado' estado, (resumen ->> 'lotes_aplicados')::int aplicados, (resumen ->> 'lotes_total')::int total from public.importaciones where id = $1", [id]).then((r) => r.rows[0]));
+  const nuevas = (id) => comoPropietario(db, (tx) => tx.query("select count(*)::int n from public.variantes where importacion_id = $1", [id]).then((r) => r.rows[0].n));
+
+  it("un lote intermedio que falla no guarda nada suyo; la importación queda «en curso» con los lotes anteriores", async () => {
+    const id = await lote(1);
+    const roto = [...LOTES[1].slice(0, 499), { accion: "precio", variante_id: 999999, precio: { precio_neto: 1, iva_porcentaje: 21 } }];
+    expect(await codigoError(() => lote(2, roto))).toBe("P0002");
+    expect(await estado(id)).toEqual({ estado: "en_curso", aplicados: 1, total: 3 });
+    expect(await nuevas(id)).toBe(500); // batch 2 rolled back entirely
+    // the history can tell it is partial
+    const lista = await comoPropietario(db, (tx) => tx.query("select id from public.importaciones where resumen ->> 'estado' = 'en_curso' and revertida_en is null").then((r) => r.rows));
+    expect(lista).toEqual([{ id }]);
+  }, 120000);
+
+  it("reintentar un lote ya guardado (respuesta perdida) no duplica nada; se reanuda desde el siguiente y se completa", async () => {
+    const id = await lote(1);
+    expect(await lote(1)).toBe(id); // repeated batch 1: same import, nothing new
+    expect(await nuevas(id)).toBe(500);
+    expect(await comoPropietario(db, (tx) => tx.query("select count(*)::int n from public.importaciones").then((r) => r.rows[0].n))).toBe(1);
+    expect(await codigoError(() => lote(3))).toBe("22023"); // out of order: batch 2 is missing
+    await lote(2);
+    expect(await lote(2)).toBe(id);
+    await lote(3);
+    expect(await estado(id)).toEqual({ estado: "completa", aplicados: 3, total: 3 });
+    expect(await nuevas(id)).toBe(1200);
     await comoPropietario(db, async (tx) => {
-      expect((await tx.query("select resumen ->> 'lotes' lotes, resumen ->> 'completa' completa from public.importaciones where id = $1", [id])).rows[0]).toEqual({ lotes: "3", completa: "true" });
-      expect((await tx.query("select count(*)::int n from public.variantes where importacion_id = $1", [id])).rows[0].n).toBe(1200);
+      expect((await tx.query("select count(*)::int n from public.variantes_tarifas")).rows[0].n).toBe(2400);
       expect((await tx.query("select count(distinct modelo_id)::int n, min(marca) marca from public.v_catalogo_admin where marca is not null")).rows[0]).toEqual({ n: 300, marca: "Marca Ficticia" });
       expect((await tx.query("select count(*)::int n from public.v_catalogo_plano where marca = 'Marca Ficticia'")).rows[0].n).toBe(1200);
-      expect((await tx.query("select count(*)::int n from public.variantes_tarifas")).rows[0].n).toBe(2400);
     });
-    // a complete import does not accept more batches
-    expect(await codigoError(() => comoPropietario(db, (tx) => lote(tx, 0, 1, id, true)))).toBe("22023");
+    expect(await lote(3)).toBe(id); // a complete import ignores repeated batches
+    expect(await codigoError(() => comoPropietario(db, (tx) => tx.query("select public.importar_tarifa('{}'::jsonb, '[{\"accion\":\"archivar\",\"variante_id\":1}]'::jsonb, $1, 4, 3)", [CLAVE])))).toBe("22023");
+    expect(await codigoError(() => lote(2, LOTES[1], "5b0d8c1e-0000-4000-8000-000000000002"))).toBe("22023"); // batch 2 of an unknown import
+  }, 120000);
+
+  it("una importación parcial se revierte sin deshacer cambios legítimos posteriores", async () => {
+    const id = await lote(1);
+    const v = (talla, modelo) => comoPropietario(db, (tx) => tx.query("select v.id from public.variantes v join public.modelos m on m.id = v.modelo_id where m.nombre = $1 and v.talla = $2", [modelo, talla]).then((r) => r.rows[0].id));
+    const [aMano, porOtra, enStock, intacta] = [await v("S", "Modelo 0"), await v("M", "Modelo 0"), await v("L", "Modelo 0"), await v("XL", "Modelo 0")];
+    await comoPropietario(db, async (tx) => {
+      await tx.query("update public.variantes set precio_neto = 1.5 where id = $1", [aMano]); // changed by hand later
+      await tx.query("update public.variantes set precio_neto = 0.9 where id = $1", [B.blancoM]); // unrelated manual change
+      await tx.query("select public.stock_registrar($1, 'entrada', 5, null, null, null)", [enStock]);
+    });
+    const otra = await comoPropietario(db, (tx) => importar(tx, [{ accion: "precio", variante_id: porOtra, precio: { precio_neto: 1.3, iva_porcentaje: 21 }, modalidad: "unidad" }]));
     const r = await comoPropietario(db, (tx) => revertir(tx, id));
-    expect(r).toMatchObject({ variantes_borradas: 1200, modelos_borrados: 300 });
+    expect(r).toMatchObject({ variantes_conservadas: 2, variantes_archivadas: 1, variantes_borradas: 497 });
+    await comoPropietario(db, async (tx) => {
+      const precio = (x) => tx.query("select precio_neto::float p, activo from public.variantes where id = $1", [x]).then((q) => q.rows[0]);
+      expect(await precio(aMano)).toEqual({ p: 1.5, activo: true });
+      expect(await precio(porOtra)).toEqual({ p: 1.3, activo: true });
+      expect(await precio(enStock)).toMatchObject({ activo: false });
+      expect(await precio(intacta)).toBeUndefined();
+      expect(await precio(B.blancoM)).toEqual({ p: 0.9, activo: true });
+      expect((await tx.query("select count(*)::int n from public.stock_movimientos")).rows[0].n).toBe(1);
+      expect((await tx.query("select revertida_en is not null r, resumen ->> 'estado' e from public.importaciones where id = $1", [id])).rows[0]).toEqual({ r: true, e: "en_curso" });
+    });
+    // a reverted import accepts no more batches; the later import stays applied
+    expect(await codigoError(() => lote(2))).toBe("22023");
+    expect(await comoPropietario(db, (tx) => tx.query("select revertida_en from public.importaciones where id = $1", [otra]).then((q) => q.rows[0].revertida_en))).toBeNull();
   }, 120000);
 
   it("el modelo elegido en la vista previa se usa por su id y debe ser del proveedor", async () => {

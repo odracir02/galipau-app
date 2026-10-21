@@ -2,7 +2,7 @@
 // comparison happen in the browser; only the operations the owner accepted
 // are sent, in one transaction (importar_tarifa).
 
-import { desenvolver } from "../../../shared/supabase/errores";
+import { desenvolver, traducirErrorSupabase } from "../../../shared/supabase/errores";
 import { leerTodo } from "../../../shared/supabase/paginar";
 
 const MENSAJES = {
@@ -27,31 +27,51 @@ export const leerCatalogoProveedor = async (sb, proveedorId) => {
 
 export const TAMANO_LOTE = 500;
 
+// Errors worth retrying the same batch for (network, timeout, lock): the batch is idempotent
+const TRANSITORIOS = new Set(["57014", "40001", "40P01", "PGRST000", "PGRST001", "PGRST002", "PGRST003"]);
+export const esErrorTransitorio = (error) =>
+  !error?.code || TRANSITORIOS.has(error.code) || /failed to fetch|networkerror|load failed|fetch failed|timeout/i.test(`${error.message ?? ""}`);
+
 /**
- * Sends the accepted operations in batches (each one a transaction, well below
- * the API statement timeout). The first batch creates the import, the next ones
- * add to it and the last one marks it complete. If a batch fails, the error
- * carries `importacionId` so the partial import can be reviewed and reverted.
+ * Sends the accepted operations in numbered batches under one client key.
+ * Each batch is a transaction; repeating a batch that was already saved does
+ * nothing, so a transient error is retried safely. If a batch fails for good,
+ * the error carries what is needed to resume or revert:
+ *   { clave, importacionId, lote (failed), lotes, lotesAplicados }
+ * @param {{ clave?: string, desdeLote?: number, tamano?: number, reintentos?: number, alAvanzar?: (lote: number, lotes: number) => void }} [o]
  * @returns {Promise<number>} id of the import
  */
-export const importarTarifa = async (sb, meta, operaciones, { tamano = TAMANO_LOTE, alAvanzar } = {}) => {
+export const importarTarifa = async (sb, meta, operaciones, { clave = globalThis.crypto.randomUUID(), desdeLote = 1, tamano = TAMANO_LOTE, reintentos = 2, alAvanzar } = {}) => {
   const lotes = Math.max(1, Math.ceil(operaciones.length / tamano));
   let id = null;
-  for (let i = 0; i < lotes; i++) {
-    const completa = i === lotes - 1;
-    try {
-      id = desenvolver(
-        await sb.rpc("importar_tarifa", { p_meta: i === 0 ? { ...meta, completa } : { completa }, p_operaciones: operaciones.slice(i * tamano, (i + 1) * tamano), p_importacion_id: id }),
-        MENSAJES
-      );
-    } catch (e) {
-      Object.assign(e, { importacionId: id, lote: i + 1, lotes });
-      throw e;
+  for (let n = desdeLote; n <= lotes; n++) {
+    const args = { p_meta: meta, p_operaciones: operaciones.slice((n - 1) * tamano, n * tamano), p_clave: clave, p_lote: n, p_total: lotes };
+    let respuesta;
+    for (let intento = 0; ; intento++) {
+      try {
+        respuesta = await sb.rpc("importar_tarifa", args);
+      } catch (e) {
+        respuesta = { data: null, error: e };
+      }
+      if (!respuesta.error || !esErrorTransitorio(respuesta.error) || intento >= reintentos) break;
     }
-    alAvanzar?.(i + 1, lotes);
+    if (respuesta.error) {
+      const e = traducirErrorSupabase(respuesta.error, MENSAJES);
+      throw Object.assign(e, { clave, importacionId: id, lote: n, lotes, lotesAplicados: n - 1 });
+    }
+    id = respuesta.data;
+    alAvanzar?.(n, lotes);
   }
   return id;
 };
+
+// The import a client key created (e.g. when the answer to the first batch was lost)
+export const buscarImportacionPorClave = async (sb, clave) =>
+  desenvolver(await sb.from("importaciones").select("id, resumen, revertida_en").eq("clave", clave).maybeSingle());
+
+// Imports of a supplier that stopped half-way and were not reverted
+export const importacionesIncompletas = (lista, proveedorId) =>
+  lista.filter((i) => i.proveedor_id === proveedorId && !i.revertida_en && i.resumen?.estado === "en_curso");
 
 export const listarImportacionesTarifa = async (sb) =>
   desenvolver(await sb.from("importaciones").select("id, creada_en, proveedor_id, usuario, resumen, revertida_en").eq("tipo", "tarifa_proveedor").order("id", { ascending: false })) ?? [];

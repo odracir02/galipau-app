@@ -25,7 +25,7 @@ export const FUNCIONES = {
   importar_historial: { p_registros: [] },
   importar_catalogo: { p_filas: [] },
   revertir_importacion: { p_id: -1 },
-  importar_tarifa: { p_meta: {}, p_operaciones: [] },
+  importar_tarifa: { p_meta: {}, p_operaciones: [], p_clave: "00000000-0000-0000-0000-000000000000", p_lote: 1, p_total: 1 },
   revertir_tarifa: { p_importacion_id: -1 },
   transicion_presupuesto_permitida: { p_desde: "x", p_hasta: "y" },
 };

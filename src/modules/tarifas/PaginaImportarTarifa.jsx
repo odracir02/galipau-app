@@ -15,7 +15,9 @@ import { clave, interpretarListaTallas } from "./domain/normalizar";
 import {
   ESTADOS, NOMBRE_ESTADO, INTERPRETACIONES, compararTarifa, construirOperaciones, decisionesPosibles, resultadoPrevisto, verificarImportacion, gruposPendientes,
 } from "./domain/comparar";
-import { listarProveedoresTarifa, leerCatalogoProveedor, importarTarifa, TAMANO_LOTE } from "./data/tarifasRepo";
+import {
+  listarProveedoresTarifa, leerCatalogoProveedor, importarTarifa, buscarImportacionPorClave, revertirTarifa, listarImportacionesTarifa, importacionesIncompletas, TAMANO_LOTE,
+} from "./data/tarifasRepo";
 
 const PASOS = ["Proveedor", "Archivo", "Análisis", "Vista previa", "Tarifa", "Conflictos", "Decisiones", "Resultado previsto", "Confirmar", "Verificación"];
 const NOMBRE_DECISION = { ignorar: "Ignorar", anadir: "Añadir", actualizar: "Actualizar precio", archivar: "Archivar" };
@@ -53,7 +55,7 @@ function Navegar({ paso, setPaso, puedeSeguir = true, siguiente = "Siguiente" })
 }
 
 /** Supplier price-list import wizard: nothing is saved until step 9. */
-function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
+function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase, tamanoLote = TAMANO_LOTE }) {
   const confirmar = useConfirmar();
   const [paso, setPaso] = useState(1);
   const [error, setError] = useState(null);
@@ -86,11 +88,16 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
   const [pestana, setPestana] = useState("diferente");
   const [importando, setImportando] = useState(null); // { lote, lotes } while applying
   const [hecho, setHecho] = useState(null);
+  const [parcial, setParcial] = useState(null); // an import that stopped half-way: { meta, ops, clave, lotes, lotesAplicados, importacionId, mensaje }
+  const [avisoReversion, setAvisoReversion] = useState(null);
+  const [importaciones, setImportaciones] = useState([]);
 
   useEffect(() => {
     (async () => {
       try {
-        setProveedores(await listarProveedoresTarifa(await obtenerCliente()));
+        const sb = await obtenerCliente();
+        setProveedores(await listarProveedoresTarifa(sb));
+        setImportaciones(await listarImportacionesTarifa(sb).catch(() => []));
       } catch (e) {
         setError(e.message);
       }
@@ -207,6 +214,36 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
       return n;
     });
 
+  // Sends the batches; on a failure keeps everything needed to resume or revert
+  const ejecutar = async ({ meta, ops, clave: claveImportacion, desdeLote, importacionId }) => {
+    const lotes = Math.max(1, Math.ceil(ops.length / tamanoLote));
+    setImportando({ lote: desdeLote - 1, lotes });
+    setError(null);
+    const sb = await obtenerCliente();
+    let id;
+    try {
+      id = await importarTarifa(sb, meta, ops, { clave: claveImportacion, desdeLote, tamano: tamanoLote, alAvanzar: (lote, total) => setImportando({ lote, lotes: total }) });
+    } catch (e) {
+      // the import may exist even if the answer to its first batch was lost
+      const existente = e.importacionId ?? importacionId ?? (await buscarImportacionPorClave(sb, claveImportacion).catch(() => null))?.id ?? null;
+      setParcial({ meta, ops, clave: claveImportacion, lotes: e.lotes ?? lotes, lotesAplicados: e.lotesAplicados ?? desdeLote - 1, importacionId: existente, mensaje: e.message });
+      setImportando(null);
+      return;
+    }
+    setParcial(null);
+    try {
+      const provId = proveedor?.id ?? (await listarProveedoresTarifa(sb)).find((p) => clave(p.nombre) === clave(nombreProveedor))?.id;
+      const despues = provId ? await leerCatalogoProveedor(sb, provId) : { catalogo: [], tarifasActuales: {} };
+      const itemsDespues = compararTarifa({ entradas: lectura.entradas, catalogo: despues.catalogo, opciones: opcionesCalculo, resoluciones: resolucionesEfectivas }).items;
+      setHecho({ id, ...verificarImportacion(ops, itemsDespues, despues.catalogo), total: ops.filter((o) => o.accion !== "tarifas" && o.accion !== "completar_modelo").length });
+      cambiarPaso(10);
+    } catch (e) {
+      setError(`La tarifa se aplicó (importación nº ${id}), pero no se ha podido comprobar el catálogo: ${e.message}`);
+    } finally {
+      setImportando(null);
+    }
+  };
+
   const importar = async () => {
     if (errores.length || operaciones.length === 0) return;
     const ok = await confirmar({
@@ -215,31 +252,40 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
       aceptar: "Aplicar tarifa",
     });
     if (!ok) return;
-    setImportando({ lote: 0, lotes: Math.ceil(operaciones.length / TAMANO_LOTE) });
-    setError(null);
+    const conteo = (lista) => lista.reduce((a, o) => ((a[o.accion] = (a[o.accion] ?? 0) + 1), a), {});
+    const meta = {
+      ...(proveedor ? { proveedor_id: proveedor.id } : { proveedor_nombre: nombreProveedor }),
+      modalidad: opciones.modalidad,
+      alternativa: opcionesCalculo.alternativa ?? null,
+      interpretacion: opciones.interpretacion,
+      iva: ivaNum,
+      archivo: { nombre: archivo.nombre, tamano: archivo.tamano, sha256: archivo.sha256, formato: lectura.formato.id, hoja: lectura.hoja },
+      resumen: { analisis: comparacion.resumen.porEstado, operaciones: conteo(operaciones), previsto },
+      resoluciones: { equivalencias: resoluciones.equivalencias, filaElegida: resoluciones.filaElegida, tallasGrupo: resolucionesEfectivas.tallasGrupo },
+    };
+    // the exact operations are kept: a retry resumes them, it never recomputes them
+    await ejecutar({ meta, ops: [...operaciones], clave: globalThis.crypto.randomUUID(), desdeLote: 1 });
+  };
+
+  const reanudar = () => ejecutar({ meta: parcial.meta, ops: parcial.ops, clave: parcial.clave, desdeLote: parcial.lotesAplicados + 1, importacionId: parcial.importacionId });
+
+  const revertirParcial = async () => {
+    const ok = await confirmar({
+      titulo: `¿Revertir la importación incompleta nº ${parcial.importacionId}?`,
+      mensaje: "Se deshace lo que entró en los lotes guardados. No se tocan los cambios hechos después, ni presupuestos ni inventario.",
+      aceptar: "Revertir",
+      peligro: true,
+    });
+    if (!ok) return;
     try {
       const sb = await obtenerCliente();
-      const conteo = (lista) => lista.reduce((a, o) => ((a[o.accion] = (a[o.accion] ?? 0) + 1), a), {});
-      const meta = {
-        ...(proveedor ? { proveedor_id: proveedor.id } : { proveedor_nombre: nombreProveedor }),
-        modalidad: opciones.modalidad,
-        alternativa: opcionesCalculo.alternativa ?? null,
-        interpretacion: opciones.interpretacion,
-        iva: ivaNum,
-        archivo: { nombre: archivo.nombre, tamano: archivo.tamano, sha256: archivo.sha256, formato: lectura.formato.id, hoja: lectura.hoja },
-        resumen: { analisis: comparacion.resumen.porEstado, operaciones: conteo(operaciones), previsto },
-        resoluciones: { equivalencias: resoluciones.equivalencias, filaElegida: resoluciones.filaElegida, tallasGrupo: resolucionesEfectivas.tallasGrupo },
-      };
-      const id = await importarTarifa(sb, meta, operaciones, { alAvanzar: (lote, lotes) => setImportando({ lote, lotes }) });
-      const provId = proveedor?.id ?? (await listarProveedoresTarifa(sb)).find((p) => clave(p.nombre) === clave(nombreProveedor))?.id;
-      const despues = provId ? await leerCatalogoProveedor(sb, provId) : { catalogo: [], tarifasActuales: {} };
-      const itemsDespues = compararTarifa({ entradas: lectura.entradas, catalogo: despues.catalogo, opciones: opcionesCalculo, resoluciones: resolucionesEfectivas }).items;
-      setHecho({ id, ...verificarImportacion(operaciones, itemsDespues, despues.catalogo), total: operaciones.filter((o) => o.accion !== "tarifas" && o.accion !== "completar_modelo").length });
-      cambiarPaso(10);
+      await revertirTarifa(sb, parcial.importacionId);
+      setParcial(null);
+      setCatalogo(proveedor ? await leerCatalogoProveedor(sb, proveedor.id) : { catalogo: [], tarifasActuales: {} });
+      setError(null);
+      setAvisoReversion(`Importación nº ${parcial.importacionId} revertida. El catálogo se ha vuelto a leer: revisa el resultado previsto antes de aplicar de nuevo.`);
     } catch (e) {
-      setError(e.importacionId ? `${e.message} Se aplicaron ${e.lote - 1} de ${e.lotes} lotes (importación nº ${e.importacionId}): revísala o reviértela en el historial de tarifas.` : e.message);
-    } finally {
-      setImportando(null);
+      setError(e.message);
     }
   };
 
@@ -299,6 +345,12 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
           <Aviso tipo="info">
             <FileSpreadsheet size={14} aria-hidden="true" /> <strong>{archivo.nombre}</strong> · formato {lectura.formato.proveedor} · hoja «{lectura.hoja}» · huella {archivo.sha256.slice(0, 12)}…
           </Aviso>
+          {proveedor && importacionesIncompletas(importaciones, proveedor.id).map((i) => (
+            <Aviso key={i.id} tipo="warning">
+              La importación nº {i.id} de este proveedor quedó incompleta ({i.resumen.lotes_aplicados} de {i.resumen.lotes_total} lotes).
+              Lo que entró aparecerá como «precio igual» y no se duplicará. <Link to={`/catalogo/tarifas/${i.id}`}>Revisarla o revertirla</Link>.
+            </Aviso>
+          ))}
           <dl className="row small mb-0">
             <dt className="col-sm-4">Proveedor</dt>
             <dd className="col-sm-8">{proveedor ? proveedor.nombre : <>{nombreProveedor} <span className="text-muted">(no existe: se creará al importar)</span></>}</dd>
@@ -600,11 +652,30 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
         <section aria-labelledby="t-confirmar">
           <h2 id="t-confirmar" className="h5">9. Confirmar</h2>
           <p>Proveedor <strong>{nombreProveedor}</strong> · archivo <strong>{archivo.nombre}</strong> · {operaciones.length} cambios.</p>
-          <p className="small text-muted">Se guarda en una sola operación: o se aplica todo o nada. Queda registrado quién, cuándo, con qué archivo (huella) y cada precio anterior, para poder revisarlo o revertirlo.</p>
-          <div className="d-flex gap-2">
-            <button type="button" className="btn btn-outline-secondary" onClick={() => cambiarPaso(8)}>Atrás</button>
-            <button type="button" className="btn btn-primary" disabled={importando || errores.length > 0 || operaciones.length === 0} onClick={importar}>{importando ? `Aplicando lote ${Math.min(importando.lote + 1, importando.lotes)} de ${importando.lotes}…` : "Aplicar tarifa"}</button>
-          </div>
+          <p className="small text-muted">
+            Se guarda por lotes de {tamanoLote} cambios: cada lote entero o nada. Si uno falla, podrás reintentarlo sin duplicar nada o revertir lo ya guardado.
+            Queda registrado quién, cuándo, con qué archivo (huella) y cada precio anterior.
+          </p>
+          {avisoReversion && <Aviso tipo="info">{avisoReversion}</Aviso>}
+          {parcial ? (
+            <Aviso tipo="warning">
+              <p className="mb-2">
+                <strong>Importación incompleta.</strong> {parcial.mensaje} Se guardaron {parcial.lotesAplicados} de {parcial.lotes} lotes
+                {parcial.importacionId ? ` (importación nº ${parcial.importacionId})` : ""}; del lote {parcial.lotesAplicados + 1} no se guardó nada.
+              </p>
+              <div className="d-flex flex-wrap gap-2">
+                <button type="button" className="btn btn-sm btn-primary" disabled={Boolean(importando)} onClick={reanudar}>
+                  {importando ? `Aplicando lote ${Math.min(importando.lote + 1, importando.lotes)} de ${importando.lotes}…` : `Reintentar desde el lote ${parcial.lotesAplicados + 1}`}
+                </button>
+                {parcial.importacionId && <button type="button" className="btn btn-sm btn-outline-danger" disabled={Boolean(importando)} onClick={revertirParcial}>Revertir lo ya guardado</button>}
+              </div>
+            </Aviso>
+          ) : (
+            <div className="d-flex gap-2">
+              <button type="button" className="btn btn-outline-secondary" onClick={() => cambiarPaso(8)}>Atrás</button>
+              <button type="button" className="btn btn-primary" disabled={Boolean(importando) || errores.length > 0 || operaciones.length === 0} onClick={importar}>{importando ? `Aplicando lote ${Math.min(importando.lote + 1, importando.lotes)} de ${importando.lotes}…` : "Aplicar tarifa"}</button>
+            </div>
+          )}
         </section>
       )}
 
