@@ -12,7 +12,37 @@
 //   descatalogada in the catalogue but not in the price list
 //   no_valida    row that cannot be used (no price, size or colour…)
 
-import { clave, limpiar, tallaCanonica, tallaEnGrupo } from "./normalizar.js";
+import { clave, limpiar, tallaCanonica, tallaEnGrupo, interpretarTalla } from "./normalizar.js";
+
+/** Key of a size-group resolution: one model ("ORION KIDS") or every model ("*") */
+export const claveGrupo = (modeloClave, textoTalla) => `${modeloClave}|${clave(textoTalla)}`;
+
+const ORDEN_LETRAS = ["3XS", "XXS", "XS", "S", "M", "L", "XL", "XXL", "3XL", "4XL", "5XL", "6XL", "7XL"];
+const ordenarTallas = (tallas) =>
+  [...new Set(tallas)].sort((a, b) => {
+    const [ia, ib] = [ORDEN_LETRAS.indexOf(a), ORDEN_LETRAS.indexOf(b)];
+    if (ia >= 0 && ib >= 0) return ia - ib;
+    return a.localeCompare(b, "es", { numeric: true });
+  });
+
+/**
+ * Pending size groups, for the owner to resolve: one entry per group text
+ * with the models where it appears and, per model, the catalogue sizes inside it.
+ */
+export const gruposPendientes = (items) => {
+  const grupos = new Map();
+  for (const i of items.filter((x) => x.conflicto === "grupo")) {
+    const k = clave(i.grupoTexto);
+    if (!grupos.has(k)) grupos.set(k, { texto: i.grupoTexto, clave: claveGrupo("*", i.grupoTexto), filas: 0, modelos: new Map() });
+    const g = grupos.get(k);
+    g.filas += i.filas.length;
+    const m = g.modelos.get(i.modeloClave) ?? { modeloClave: i.modeloClave, modelo: i.modelo, clave: claveGrupo(i.modeloClave, i.grupoTexto), colores: [], sugerencia: [] };
+    m.colores.push(i.color);
+    m.sugerencia = ordenarTallas([...m.sugerencia, ...i.sugerencia]);
+    g.modelos.set(i.modeloClave, m);
+  }
+  return [...grupos.values()].map((g) => ({ ...g, modelos: [...g.modelos.values()] })).sort((a, b) => b.filas - a.filas);
+};
 
 export const ESTADOS = ["nueva", "igual", "diferente", "ambigua", "descatalogada", "no_valida"];
 export const NOMBRE_ESTADO = {
@@ -83,13 +113,16 @@ const motivosBloqueo = (e) => {
  * @param {object[]} p.catalogo  v_catalogo_admin rows of THIS supplier
  * @param {Record<number, object[]>} [p.tarifasActuales] variante_id -> current price modes
  * @param {{ modalidad: string, interpretacion: "neto"|"iva_incluido", iva: number }} p.opciones
- * @param {{ equivalencias?: Record<string, number|"nuevo">, filaElegida?: Record<string, number> }} [p.resoluciones]
+ * @param {{ equivalencias?: Record<string, number|"nuevo">, filaElegida?: Record<string, number>, tallasGrupo?: Record<string, string[]> }} [p.resoluciones]
  *   equivalencias: file model key -> existing modelo_id (same model) or "nuevo";
- *   filaElegida: line key -> Excel row whose price is the right one.
+ *   filaElegida: line key -> Excel row whose price is the right one;
+ *   tallasGrupo: claveGrupo(model or "*", group text) -> the individual sizes that
+ *   group stands for, confirmed by the owner (a model entry wins over "*").
  */
 export const compararTarifa = ({ entradas, descartadas = [], catalogo, tarifasActuales = {}, opciones, resoluciones = {} }) => {
   const equivalencias = resoluciones.equivalencias ?? {};
   const filaElegida = resoluciones.filaElegida ?? {};
+  const tallasGrupo = resoluciones.tallasGrupo ?? {};
   const items = [];
 
   // ---- existing models of the supplier
@@ -113,17 +146,19 @@ export const compararTarifa = ({ entradas, descartadas = [], catalogo, tarifasAc
     const fm = fichero.get(k);
     if (!fm.referencia && e.referencia) fm.referencia = e.referencia;
     if (!fm.tipo && e.tipo) fm.tipo = e.tipo;
+    // a size group is only split into the sizes the owner confirmed; otherwise it stays pending
+    const tallas = e.grupo ? (tallasGrupo[claveGrupo(k, e.tallaTexto)] ?? tallasGrupo[claveGrupo("*", e.tallaTexto)] ?? null) : e.tallas;
     for (const color of e.colores) {
-      if (e.grupo) {
-        fm.grupos.push({ color, grupo: e.grupo, tallaTexto: e.tallaTexto, precios: e.precios, unidades: e.unidades, fila: e.fila, problemas: e.problemas });
+      if (!tallas?.length) {
+        fm.grupos.push({ color, grupo: e.grupo, tallaTexto: e.tallaTexto, precios: e.precios, fila: e.fila });
         continue;
       }
-      for (const talla of e.tallas) {
+      for (const talla of tallas) {
         const lk = `${k}|${clave(color)}|${talla}`;
         const previa = fm.lineas.get(lk);
         const fuente = { fila: e.fila, precios: e.precios, unidades: e.unidades, problemas: e.problemas };
         if (previa) previa.fuentes.push(fuente);
-        else fm.lineas.set(lk, { id: lk, color, talla, fuentes: [fuente] });
+        else fm.lineas.set(lk, { id: lk, color, talla, fuentes: [fuente], desdeGrupo: e.grupo ? e.tallaTexto : null });
       }
     }
   }
@@ -151,7 +186,7 @@ export const compararTarifa = ({ entradas, descartadas = [], catalogo, tarifasAc
       const distintas = l.fuentes.filter((f, i) => l.fuentes.findIndex((g) => JSON.stringify(g.precios) === JSON.stringify(f.precios)) === i);
       const elegida = distintas.length > 1 ? distintas.find((f) => f.fila === filaElegida[l.id]) : distintas[0];
       const fuente = elegida ?? distintas[0];
-      const item = { ...base, id: l.id, color: l.color, talla: l.talla, filas: l.fuentes.map((f) => f.fila), precios: fuente.precios, unidades: fuente.unidades, tarifas: tarifasDe(fuente.precios, fuente.unidades) };
+      const item = { ...base, id: l.id, color: l.color, talla: l.talla, filas: l.fuentes.map((f) => f.fila), precios: fuente.precios, unidades: fuente.unidades, tarifas: tarifasDe(fuente.precios, fuente.unidades), desdeGrupo: l.desdeGrupo };
       const importe = fuente.precios[opciones.modalidad];
       if (importe === undefined) {
         items.push({ ...item, estado: "no_valida", motivo: `Sin precio «${opciones.modalidad}» en el archivo.${fuente.problemas.length ? " " + fuente.problemas.join(" ") : ""}` });
@@ -177,28 +212,25 @@ export const compararTarifa = ({ entradas, descartadas = [], catalogo, tarifasAc
       }
     }
 
-    // ---- grouped sizes: only update existing sizes inside the group
+    // ---- size groups not split yet: pending, never stored as one size
+    const pendientes = new Map();
     for (const g of fm.grupos) {
-      const importe = g.precios[opciones.modalidad];
-      const dentro = (modelo?.variantes ?? []).filter((v) => clave(v.color) === clave(g.color) && tallaEnGrupo(v.talla, g.grupo));
-      if (dentro.length === 0 || importe === undefined) {
-        items.push({
-          ...base, id: `${fm.clave}|${clave(g.color)}|${g.tallaTexto}`, estado: "ambigua", conflicto: "grupo", color: g.color, talla: g.tallaTexto, filas: [g.fila], precios: g.precios, importe: importe ?? null,
-          motivo: importe === undefined ? `Tallas agrupadas «${g.tallaTexto}» sin precio «${opciones.modalidad}».` : `Tallas agrupadas «${g.tallaTexto}»: el proveedor no detalla qué tallas existen y no hay tallas de ese grupo en el catálogo. No se crean variantes nuevas.`,
-        });
+      const id = `${fm.clave}|${clave(g.color)}|${clave(g.tallaTexto)}`;
+      if (pendientes.has(id)) {
+        pendientes.get(id).filas.push(g.fila);
         continue;
       }
-      for (const v of dentro) {
-        if (usadas.has(v.variante_id)) continue; // an explicit size wins over a group
-        usadas.add(v.variante_id);
-        const nuevo = precioSegun(importe, opciones);
-        items.push({
-          ...base, id: `${fm.clave}|${clave(g.color)}|${tallaCanonica(v.talla)}`, color: g.color, talla: v.talla, filas: [g.fila], precios: g.precios, unidades: g.unidades, tarifas: tarifasDe(g.precios, g.unidades),
-          importe, nuevo, costeNuevo: costeDe(nuevo), varianteId: v.variante_id, actual: v, costeActual: costeDe(v), archivada: !v.variante_activa, tarifasActuales: tarifasActuales[v.variante_id] ?? [],
-          desdeGrupo: g.tallaTexto, base: mismoPrecio(v, nuevo) ? "igual" : "diferente", estado: mismoPrecio(v, nuevo) ? "igual" : "diferente",
-        });
-      }
+      // sizes of this model and colour already in the catalogue inside the range: a suggestion only
+      const dentro = (modelo?.variantes ?? []).filter((v) => clave(v.color) === clave(g.color) && tallaEnGrupo(v.talla, g.grupo));
+      for (const v of dentro) usadas.add(v.variante_id); // covered by the group: not "discontinued"
+      const importe = g.precios[opciones.modalidad];
+      pendientes.set(id, {
+        ...base, id, estado: "ambigua", conflicto: "grupo", color: g.color, talla: g.tallaTexto, grupoTexto: g.tallaTexto, filas: [g.fila], precios: g.precios, importe: importe ?? null,
+        sugerencia: ordenarTallas(dentro.map((v) => tallaCanonica(v.talla))),
+        motivo: `Tallas agrupadas «${g.tallaTexto}»: indica qué tallas individuales incluye para poder importarlas.`,
+      });
     }
+    items.push(...pendientes.values());
   }
 
   // ---- in the catalogue, not in the price list
@@ -256,6 +288,11 @@ export const construirOperaciones = (items, decisiones, { tipos = {}, guardarMod
       continue;
     }
     if (d === "anadir") {
+      const t = interpretarTalla(i.talla);
+      if (!t.tallas || t.tallas.length !== 1) {
+        errores.push(`${i.modelo} ${i.color}: «${i.talla}» no es una talla individual.`);
+        continue;
+      }
       const tipo = limpiar(i.tipo ?? tipos[i.modeloClave] ?? "");
       if (!tipo) {
         errores.push(`Indica el tipo de artículo del modelo nuevo «${i.modelo}».`);

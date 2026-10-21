@@ -9,9 +9,9 @@ import { NavCatalogo } from "../catalogo/PaginaCatalogo";
 import { TIPOS_SUGERIDOS, describirPrecio, euro5 } from "../catalogo/domain/catalogo";
 import { leerXlsx, huellaArchivo } from "./domain/xlsx";
 import { FORMATOS, leerTarifa } from "./domain/formatos";
-import { clave } from "./domain/normalizar";
+import { clave, interpretarListaTallas } from "./domain/normalizar";
 import {
-  ESTADOS, NOMBRE_ESTADO, INTERPRETACIONES, compararTarifa, construirOperaciones, decisionesPosibles, resultadoPrevisto, verificarImportacion,
+  ESTADOS, NOMBRE_ESTADO, INTERPRETACIONES, compararTarifa, construirOperaciones, decisionesPosibles, resultadoPrevisto, verificarImportacion, gruposPendientes,
 } from "./domain/comparar";
 import { listarProveedoresTarifa, leerCatalogoProveedor, importarTarifa } from "./data/tarifasRepo";
 
@@ -64,6 +64,7 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
   const [catalogo, setCatalogo] = useState(null);
   const [opciones, setOpciones] = useState({ modalidad: "", interpretacion: "", iva: "21" });
   const [resoluciones, setResoluciones] = useState({ equivalencias: {}, filaElegida: {} });
+  const [textosGrupo, setTextosGrupo] = useState({}); // size-group key -> sizes typed by the owner
   const [decisiones, setDecisiones] = useState({});
   const [tipos, setTipos] = useState({});
   const [guardarModalidades, setGuardarModalidades] = useState(true);
@@ -96,6 +97,7 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
     setCatalogo(null);
     setDecisiones({});
     setResoluciones({ equivalencias: {}, filaElegida: {} });
+    setTextosGrupo({});
     setOpciones((o) => ({ ...o, modalidad: "" }));
     if (!fichero) return;
     try {
@@ -126,9 +128,26 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
   const opcionesListas = Boolean(opciones.modalidad && opciones.interpretacion && opciones.iva !== "" && ivaNum >= 0 && ivaNum <= 100);
   const opcionesCalculo = useMemo(() => ({ modalidad: opciones.modalidad, interpretacion: opciones.interpretacion, iva: ivaNum }), [opciones.modalidad, opciones.interpretacion, ivaNum]);
 
+  // size groups split by the owner: only lists of individual sizes without errors count
+  const grupoResuelto = useMemo(() => {
+    const r = {};
+    for (const [k, texto] of Object.entries(textosGrupo)) r[k] = interpretarListaTallas(texto);
+    return r;
+  }, [textosGrupo]);
+  const resolucionesEfectivas = useMemo(
+    () => ({ ...resoluciones, tallasGrupo: Object.fromEntries(Object.entries(grupoResuelto).filter(([, r]) => r.errores.length === 0 && r.tallas.length > 0).map(([k, r]) => [k, r.tallas])) }),
+    [resoluciones, grupoResuelto]
+  );
+
   const comparacion = useMemo(() => {
     if (!lectura || !catalogo || !opcionesListas) return null;
-    return compararTarifa({ entradas: lectura.entradas, descartadas: lectura.descartadas, catalogo: catalogo.catalogo, tarifasActuales: catalogo.tarifasActuales, opciones: opcionesCalculo, resoluciones });
+    return compararTarifa({ entradas: lectura.entradas, descartadas: lectura.descartadas, catalogo: catalogo.catalogo, tarifasActuales: catalogo.tarifasActuales, opciones: opcionesCalculo, resoluciones: resolucionesEfectivas });
+  }, [lectura, catalogo, opcionesListas, opcionesCalculo, resolucionesEfectivas]);
+
+  // every size group of the file (resolved or not), to keep them editable
+  const grupos = useMemo(() => {
+    if (!lectura || !catalogo || !opcionesListas) return [];
+    return gruposPendientes(compararTarifa({ entradas: lectura.entradas, catalogo: catalogo.catalogo, opciones: opcionesCalculo, resoluciones }).items);
   }, [lectura, catalogo, opcionesListas, opcionesCalculo, resoluciones]);
 
   // How many current variants each price mode matches exactly (a hint, never a choice)
@@ -145,6 +164,7 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
   const items = useMemo(() => comparacion?.items ?? [], [comparacion]);
   const { operaciones, errores } = useMemo(() => construirOperaciones(items, decisiones, { tipos, guardarModalidades }), [items, decisiones, tipos, guardarModalidades]);
   const previsto = useMemo(() => resultadoPrevisto(operaciones, items), [operaciones, items]);
+  const altas = useMemo(() => operaciones.filter((o) => o.accion === "alta"), [operaciones]);
   const modelosSinTipo = useMemo(
     () => [...new Map(items.filter((i) => decisiones[i.id] === "anadir" && !i.modeloId && !i.tipo).map((i) => [i.modeloClave, i.modelo])).entries()],
     [items, decisiones]
@@ -177,12 +197,12 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
         iva: ivaNum,
         archivo: { nombre: archivo.nombre, tamano: archivo.tamano, sha256: archivo.sha256, formato: lectura.formato.id, hoja: lectura.hoja },
         resumen: { analisis: comparacion.resumen.porEstado, operaciones: conteo(operaciones), previsto },
-        resoluciones: { equivalencias: resoluciones.equivalencias, filaElegida: resoluciones.filaElegida },
+        resoluciones: { equivalencias: resoluciones.equivalencias, filaElegida: resoluciones.filaElegida, tallasGrupo: resolucionesEfectivas.tallasGrupo },
       };
       const id = await importarTarifa(sb, meta, operaciones);
       const provId = proveedor?.id ?? (await listarProveedoresTarifa(sb)).find((p) => clave(p.nombre) === clave(nombreProveedor))?.id;
       const despues = provId ? await leerCatalogoProveedor(sb, provId) : { catalogo: [], tarifasActuales: {} };
-      const itemsDespues = compararTarifa({ entradas: lectura.entradas, catalogo: despues.catalogo, opciones: opcionesCalculo, resoluciones }).items;
+      const itemsDespues = compararTarifa({ entradas: lectura.entradas, catalogo: despues.catalogo, opciones: opcionesCalculo, resoluciones: resolucionesEfectivas }).items;
       setHecho({ id, ...verificarImportacion(operaciones, itemsDespues, despues.catalogo), total: operaciones.filter((o) => o.accion !== "tarifas").length });
       setPaso(10);
     } catch (e) {
@@ -254,7 +274,7 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
             <dt className="col-sm-4">Modalidades de precio</dt>
             <dd className="col-sm-8">{lectura.formato.modalidades.map((m) => `${m.nombre} (${lectura.entradas.filter((e) => m.id in e.precios).length} filas)`).join(" · ")}</dd>
             <dt className="col-sm-4">Marcas</dt><dd className="col-sm-8">{[...new Set(lectura.entradas.map((e) => e.marca).filter(Boolean))].join(", ") || "—"}</dd>
-            <dt className="col-sm-4">Tallas agrupadas</dt><dd className="col-sm-8">{lectura.entradas.filter((e) => e.grupo).length} filas (no crean variantes nuevas)</dd>
+            <dt className="col-sm-4">Tallas agrupadas</dt><dd className="col-sm-8">{lectura.entradas.filter((e) => e.grupo).length} filas: hay que indicar sus tallas individuales en el paso 6</dd>
             <dt className="col-sm-4">Filas con avisos</dt><dd className="col-sm-8">{lectura.entradas.filter((e) => e.problemas.length).length}</dd>
             <dt className="col-sm-4">Filas descartadas</dt><dd className="col-sm-8">{lectura.descartadas.length} (notas, precios a consultar)</dd>
             <dt className="col-sm-4">Catálogo actual del proveedor</dt><dd className="col-sm-8">{catalogo ? `${catalogo.catalogo.length} variantes` : "Cargando…"}</dd>
@@ -356,7 +376,49 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
               ))}
             </>
           )}
-          <p className="small text-muted mt-2">Lo que quede sin decidir se queda como «referencia ambigua» y se ignora. Las tallas agrupadas ({conflictos.filter((i) => i.conflicto === "grupo").length}) solo pueden actualizar tallas que ya existen en el catálogo.</p>
+          {grupos.length > 0 && (
+            <>
+              <h3 className="h6 mt-3">Tallas agrupadas</h3>
+              <p className="small text-muted">
+                Cada talla es una variante. Escribe las tallas individuales que incluye cada grupo, separadas por comas (por ejemplo «02A, 04A, 06A»), solo si las sabes con certeza
+                (ficha del proveedor). Lo que no se resuelva queda pendiente y no se importa. Cada talla conserva el precio de su fila.
+              </p>
+              {grupos.map((g) => {
+                const r = grupoResuelto[g.clave];
+                return (
+                  <div key={g.clave} className="border rounded p-2 mb-2">
+                    <label htmlFor={`grupo-${g.clave}`} className="form-label mb-1">
+                      <strong>«{g.texto}»</strong> <span className="text-muted small">({g.filas} filas, {g.modelos.length} modelos)</span>
+                    </label>
+                    <input id={`grupo-${g.clave}`} className="form-control form-control-sm" placeholder="Tallas para todos los modelos" value={textosGrupo[g.clave] ?? ""}
+                      onChange={(e) => setTextosGrupo((t) => ({ ...t, [g.clave]: e.target.value }))} />
+                    {r?.errores.map((e) => <div key={e} className="small text-danger">{e}</div>)}
+                    {r && r.errores.length === 0 && r.tallas.length > 0 && <div className="small text-success">{r.tallas.length} tallas: {r.tallas.join(", ")}</div>}
+                    <details className="mt-1 small">
+                      <summary>Tallas distintas para un modelo</summary>
+                      {g.modelos.map((m) => {
+                        const rm = grupoResuelto[m.clave];
+                        return (
+                          <div key={m.clave} className="d-flex flex-wrap align-items-center gap-2 mt-1">
+                            <label htmlFor={`grupo-${m.clave}`} className="mb-0" style={{ minWidth: "12rem" }}>{m.modelo} <span className="text-muted">({m.colores.join(", ")})</span></label>
+                            <input id={`grupo-${m.clave}`} className="form-control form-control-sm w-auto" placeholder="Como el grupo" value={textosGrupo[m.clave] ?? ""}
+                              onChange={(e) => setTextosGrupo((t) => ({ ...t, [m.clave]: e.target.value }))} />
+                            {m.sugerencia.length > 0 && (
+                              <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => setTextosGrupo((t) => ({ ...t, [m.clave]: m.sugerencia.join(", ") }))}>
+                                Usar las del catálogo ({m.sugerencia.join(", ")})
+                              </button>
+                            )}
+                            {rm?.errores.map((e) => <span key={e} className="text-danger">{e}</span>)}
+                          </div>
+                        );
+                      })}
+                    </details>
+                  </div>
+                );
+              })}
+            </>
+          )}
+          <p className="small text-muted mt-2">Lo que quede sin decidir se queda como «referencia ambigua» y se ignora: {conflictos.length} líneas ({conflictos.filter((i) => i.conflicto === "grupo").length} de tallas agrupadas sin resolver).</p>
           <Navegar paso={paso} setPaso={setPaso} />
         </section>
       )}
@@ -436,6 +498,26 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
           </ul>
           <p className="small">Precio usado en presupuestos: modalidad <strong>{lectura.formato.modalidades.find((m) => m.id === opciones.modalidad)?.nombre}</strong>, {INTERPRETACIONES[opciones.interpretacion].toLowerCase()}, IVA {ivaNum} %.</p>
           <Aviso tipo="info">No cambian: presupuestos guardados (conservan su precio), existencias, reservas ni movimientos de inventario.</Aviso>
+          {conflictos.some((i) => i.conflicto === "grupo") && (
+            <Aviso tipo="warning">{conflictos.filter((i) => i.conflicto === "grupo").length} líneas con tallas agrupadas siguen pendientes y no se importarán (paso 6).</Aviso>
+          )}
+          {altas.length > 0 && (
+            <>
+              <h3 className="h6">Variantes que se crearán ({altas.length})</h3>
+              <input type="search" className="form-control form-control-sm mb-2" placeholder="Buscar" aria-label="Buscar en las variantes nuevas" value={filtro} onChange={(e) => setFiltro(e.target.value)} />
+              <div className="gx-tabla table-responsive">
+                <table className="table table-sm mb-0 small" aria-label="Variantes que se crearán">
+                  <thead><tr><th>Modelo</th><th>Color</th><th>Talla</th><th>Precio</th></tr></thead>
+                  <tbody>
+                    {altas.filter((o) => !filtro || clave(`${o.modelo.nombre} ${o.color} ${o.talla}`).includes(clave(filtro))).slice(0, MAX_FILAS).map((o) => (
+                      <tr key={`${o.modelo.nombre}|${o.color}|${o.talla}`}><td>{o.modelo.nombre}</td><td>{o.color}</td><td>{o.talla}</td><td>{describirPrecio(o.precio)}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {altas.length > MAX_FILAS && <p className="small text-muted mt-1">Se muestran {MAX_FILAS} de {altas.length}; usa la búsqueda para ver el resto.</p>}
+            </>
+          )}
           {errores.map((e) => <Aviso key={e} tipo="warning">{e}</Aviso>)}
           <Navegar paso={paso} setPaso={setPaso} puedeSeguir={errores.length === 0 && operaciones.length > 0} />
         </section>

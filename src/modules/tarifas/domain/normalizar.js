@@ -106,3 +106,20 @@ export const precioTarifa = (v) => {
   return Number(v.toPrecision(12));
 };
 export const tieneMasDe4Decimales = (v) => Math.abs(v * 1e4 - Math.round(v * 1e4)) > 1e-6;
+
+/**
+ * Individual sizes typed by the owner to split a size group ("02A, 04A, 06A").
+ * Each item must be ONE size (a letter range such as "S-XL" is also accepted);
+ * groups ("Kids", "2A a 12A") are rejected.
+ * @returns {{ tallas: string[], errores: string[] }}
+ */
+export const interpretarListaTallas = (texto) => {
+  const tallas = [];
+  const errores = [];
+  for (const parte of String(texto ?? "").split(/[,;\n]+/).map(limpiar).filter(Boolean)) {
+    const t = interpretarTalla(parte);
+    if (t.tallas) tallas.push(...t.tallas);
+    else errores.push(t.grupo ? `«${parte}» es un grupo de tallas: escribe cada talla por separado.` : t.problema);
+  }
+  return { tallas: [...new Set(tallas)], errores };
+};

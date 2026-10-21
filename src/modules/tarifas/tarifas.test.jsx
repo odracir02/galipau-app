@@ -85,12 +85,20 @@ describe("asistente de importación de tarifas", () => {
 
     // 6. conflicts: two prices for ORION WOMEN COLOR 3XL
     await user.selectOptions(screen.getByLabelText(/ORION WOMEN · COLOR · 3XL/), "8");
+    // size groups: a group is rejected as a size; individual sizes split it
+    const grupo = screen.getByLabelText(/«2A a 12A»/);
+    await user.type(grupo, "2A a 12A");
+    expect(screen.getByText(/es un grupo de tallas: escribe cada talla por separado/)).toBeTruthy();
+    await user.clear(grupo);
+    await user.type(grupo, "2A, 4A");
+    expect(screen.getByText("2 tallas: 02A, 04A")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Siguiente" }));
 
     // 7. decisions: everything starts as "ignorar"
     expect(screen.getByRole("tab", { name: /Precio diferente \(1\)/ }).getAttribute("aria-selected")).toBe("true");
     await user.selectOptions(screen.getByLabelText("Decisión para ORION COLOR M"), "actualizar");
     await user.click(screen.getByRole("tab", { name: /Variante nueva/ }));
+    expect(screen.getByLabelText("Decisión para ORION KIDS COLOR 04A")).toBeTruthy();
     await user.type(screen.getByLabelText("Buscar en la lista"), "LYRA");
     await user.click(screen.getByRole("button", { name: /Añadir: todas las de la lista \(1\)/ }));
     await user.click(screen.getByRole("button", { name: "Siguiente" }));
@@ -102,6 +110,7 @@ describe("asistente de importación de tarifas", () => {
     await user.type(screen.getByLabelText("LYRA"), "Bolsa");
     await user.click(screen.getByRole("button", { name: "Siguiente" }));
     expect(screen.getByText(/1 variantes nuevas \(1 modelos nuevos\)/)).toBeTruthy();
+    expect(screen.getByRole("table", { name: "Variantes que se crearán" }).textContent).toMatch(/LYRA.*COLOR.*TU.*9,50/);
     expect(screen.getByText(/1 precios actualizados \(1 suben, 0 bajan\)/)).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Siguiente" }));
 

@@ -1,9 +1,9 @@
 // Supplier price-list import: reading, formats, comparison and operations. FICTITIOUS data only.
 import { describe, it, expect } from "vitest";
 import { leerXlsx, huellaArchivo, indiceColumna } from "./xlsx.js";
-import { interpretarTalla, interpretarColores, tallaEnGrupo, tallaCanonica, clave, precioTarifa } from "./normalizar.js";
+import { interpretarTalla, interpretarColores, tallaEnGrupo, tallaCanonica, clave, precioTarifa, interpretarListaTallas } from "./normalizar.js";
 import { leerTarifa } from "./formatos.js";
-import { compararTarifa, construirOperaciones, decisionesPosibles, resultadoPrevisto, precioSegun, verificarImportacion } from "./comparar.js";
+import { compararTarifa, construirOperaciones, decisionesPosibles, resultadoPrevisto, precioSegun, verificarImportacion, gruposPendientes, claveGrupo } from "./comparar.js";
 import { crearXlsx, TARIFA_ROLY_FICTICIA, TARIFA_SOLS_FICTICIA } from "./xlsxPrueba.js";
 
 const libroRoly = () => leerXlsx(crearXlsx([{ nombre: "Tarifa", filas: TARIFA_ROLY_FICTICIA }]));
@@ -143,11 +143,12 @@ describe("comparación con el catálogo", () => {
     expect(buscar(items, "ORION", "COLOR", "M").costeActual).toBeCloseTo(2.783, 10);
     expect(buscar(items, "ORION", "BLANCO", "XS")).toMatchObject({ estado: "nueva", modeloId: 10 });
     expect(buscar(items, "ORION", "COLOR", "XXXS")).toMatchObject({ estado: "descatalogada", varianteId: 3 });
-    expect(buscar(items, "ORION KIDS", "COLOR", "04A")).toMatchObject({ estado: "igual", desdeGrupo: "2A a 12A" }); // group only updates existing sizes
-    expect(items.filter((i) => i.modelo === "ORION KIDS")).toHaveLength(1);
+    // a size group is never one size: pending until the owner lists its sizes
+    expect(items.filter((i) => i.modelo === "ORION KIDS")).toEqual([expect.objectContaining({ estado: "ambigua", conflicto: "grupo", talla: "2A a 12A", sugerencia: ["04A"] })]);
+    expect(items.some((i) => i.varianteId === 4 && i.estado === "descatalogada")).toBe(false);
     expect(buscar(items, "LYRA", "COLOR", "TU")).toMatchObject({ estado: "nueva", modeloId: null, marca: "NEOBLU" });
     expect(items.find((i) => i.modelo === "SIRIO")).toMatchObject({ estado: "no_valida", motivo: "Sin color." });
-    expect(resumen.porEstado.igual).toBe(2);
+    expect(resumen.porEstado.igual).toBe(1);
     expect(resumen.modelosNuevos).toBe(1); // LYRA (ORION WOMEN is pending: similar name)
   });
 
@@ -195,7 +196,7 @@ describe("operaciones a partir de las decisiones", () => {
     expect(construirOperaciones(items, {}, { guardarModalidades: false }).operaciones).toEqual([]);
     const { operaciones } = construirOperaciones(items, {});
     expect(operaciones.every((o) => o.accion === "tarifas")).toBe(true);
-    expect(operaciones.map((o) => o.variante_id).sort()).toEqual([1, 4]);
+    expect(operaciones.map((o) => o.variante_id)).toEqual([1]);
   });
 
   it("añadir, actualizar y archivar solo lo decidido; un modelo nuevo necesita tipo", () => {
@@ -240,5 +241,40 @@ describe("verificación después de importar", () => {
     const items = compararTarifa({ entradas: t.entradas, catalogo: despues, opciones: OPCIONES }).items;
     expect(verificarImportacion(operaciones, items, despues)).toEqual({ comprobadas: 3, fallos: [] });
     expect(verificarImportacion(operaciones, items, CATALOGO_SOLS).fallos).toEqual(["Archivo de la variante 3"]);
+  });
+});
+
+describe("tallas agrupadas: siempre variantes individuales", () => {
+  it("la lista de tallas del propietario admite tallas sueltas y rechaza grupos", () => {
+    expect(interpretarListaTallas("2A, 4a; 6A\n8A, 4A")).toEqual({ tallas: ["02A", "04A", "06A", "08A"], errores: [] });
+    expect(interpretarListaTallas("38, 40, 42").tallas).toEqual(["38", "40", "42"]);
+    expect(interpretarListaTallas("Kids, 2A a 12A").errores).toEqual([
+      "«Kids» es un grupo de tallas: escribe cada talla por separado.",
+      "«2A a 12A» es un grupo de tallas: escribe cada talla por separado.",
+    ]);
+  });
+
+  it("un grupo resuelto se desglosa en una variante por talla, con el precio de su fila", () => {
+    const tallas = ["02A", "04A", "06A", "08A", "10A", "12A"];
+    const { items } = comparar({ tallasGrupo: { [claveGrupo("*", "2A a 12A")]: tallas } });
+    const kids = items.filter((i) => i.modelo === "ORION KIDS");
+    expect(kids.map((i) => [i.talla, i.estado, i.importe])).toEqual(tallas.map((t) => [t, t === "04A" ? "igual" : "nueva", 1.9]));
+    expect(kids[0]).toMatchObject({ desdeGrupo: "2A a 12A", filas: [9] });
+  });
+
+  it("la resolución de un modelo concreto manda sobre la general", () => {
+    const { items } = comparar({ tallasGrupo: { [claveGrupo("*", "2A a 12A")]: ["02A", "04A"], [claveGrupo("ORION KIDS", "2A a 12A")]: ["04A", "06A"] } });
+    expect(items.filter((i) => i.modelo === "ORION KIDS").map((i) => i.talla)).toEqual(["04A", "06A"]);
+  });
+
+  it("lista los grupos pendientes con sus modelos y la sugerencia del catálogo", () => {
+    expect(gruposPendientes(comparar().items)).toEqual([
+      { texto: "2A a 12A", clave: "*|2A A 12A", filas: 1, modelos: [{ modeloClave: "ORION KIDS", modelo: "ORION KIDS", clave: "ORION KIDS|2A A 12A", colores: ["COLOR"], sugerencia: ["04A"] }] },
+    ]);
+  });
+
+  it("nunca se da de alta un grupo como si fuera una talla", () => {
+    const falsa = { id: "x", estado: "nueva", modelo: "ORION", modeloClave: "ORION", color: "COLOR", talla: "38-52", tipo: "Camiseta", nuevo: {}, tarifas: [] };
+    expect(construirOperaciones([falsa], { x: "anadir" }).errores).toEqual(["ORION COLOR: «38-52» no es una talla individual."]);
   });
 });
