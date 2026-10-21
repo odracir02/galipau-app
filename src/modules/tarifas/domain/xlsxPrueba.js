@@ -54,6 +54,7 @@ export const TARIFA_ROLY_FICTICIA = [
   [null, null, "Niño - Kid - Enfant", "Kids", "Blanco/Color - White/Colour - Blanc/Couleur", null, null, 0.9, 0.945, 1.08],
   [null, null, "Hombre - Man - Homme", "S-2XL", "Color - Colour - Couleur- Negro Jaspeado", null, null, 1.4, 1.47, "-"],
   ["0902", "Beta Bolsa", "Unisex - Unisex - Unisex", "One size", "Color - Colour - Couleur", 100, 10, 0.5, 0.525, 0.6],
+  [9004, "Epsilon", "Unisex - Unisex - Unisex", "S-L", "Color - Colour - Couleur", 20, 1, 5, 5.25, "-"], // sold by packs of ONE unit
   [9003, "Gamma", "Mujer - Woman - Femme", "Consultar", "Color - Colour - Couleur"],
   [null, null, null, "TARIFA CONFIDENCIAL\nCONFIDENTIAL PRICE", null, null, null, 0.9],
   ["Ref.", "Nombre", "Artículo", "PRECIOS SEGÚN CANTIDAD · PRICES PER QUANTITY"],

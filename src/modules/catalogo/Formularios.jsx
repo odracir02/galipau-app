@@ -12,9 +12,10 @@ const CAMPOS_PROVEEDOR = [
   { clave: "notas", etiqueta: "Notas", ancho: "col-md-12" },
 ];
 const CAMPOS_MODELO = [
-  { clave: "nombre", etiqueta: "Nombre del modelo *", ancho: "col-md-5" },
+  { clave: "nombre", etiqueta: "Nombre del modelo *", ancho: "col-md-4" },
   { clave: "tipo", etiqueta: "Tipo de artículo *", ancho: "col-md-3", lista: "tipos-articulo" },
-  { clave: "referencia", etiqueta: "Referencia del fabricante", ancho: "col-md-4" },
+  { clave: "marca", etiqueta: "Marca", ancho: "col-md-2" },
+  { clave: "referencia", etiqueta: "Referencia del fabricante", ancho: "col-md-3" },
   { clave: "descripcion", etiqueta: "Descripción", ancho: "col-md-12" },
 ];
 

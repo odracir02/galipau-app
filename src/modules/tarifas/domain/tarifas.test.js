@@ -193,10 +193,14 @@ describe("comparación con el catálogo", () => {
 describe("operaciones a partir de las decisiones", () => {
   it("sin decisiones no se cambia ningún precio (solo se guardan las modalidades si se pide)", () => {
     const { items } = comparar();
-    expect(construirOperaciones(items, {}, { guardarModalidades: false }).operaciones).toEqual([]);
+    expect(construirOperaciones(items, {}, { guardarModalidades: false, completarModelos: false }).operaciones).toEqual([]);
     const { operaciones } = construirOperaciones(items, {});
-    expect(operaciones.every((o) => o.accion === "tarifas")).toBe(true);
-    expect(operaciones.map((o) => o.variante_id)).toEqual([1]);
+    expect(operaciones.filter((o) => o.accion !== "completar_modelo").map((o) => [o.accion, o.variante_id])).toEqual([["tarifas", 1]]);
+    // existing models only get their EMPTY reference / brand filled
+    expect(operaciones.filter((o) => o.accion === "completar_modelo")).toEqual([
+      { accion: "completar_modelo", modelo_id: 10, referencia: "5001", marca: "SOL'S" },
+      { accion: "completar_modelo", modelo_id: 11, referencia: "5003", marca: "SOL'S" },
+    ]);
   });
 
   it("añadir, actualizar y archivar solo lo decidido; un modelo nuevo necesita tipo", () => {
@@ -206,13 +210,13 @@ describe("operaciones a partir de las decisiones", () => {
     const baja = buscar(items, "ORION", "COLOR", "XXXS");
     const decisiones = { [nueva.id]: "anadir", [cambio.id]: "actualizar", [baja.id]: "archivar" };
     expect(construirOperaciones(items, decisiones).errores).toEqual(["Indica el tipo de artículo del modelo nuevo «LYRA»."]);
-    const { operaciones, errores } = construirOperaciones(items, decisiones, { tipos: { LYRA: "Bolsa" }, guardarModalidades: false });
+    const { operaciones, errores } = construirOperaciones(items, decisiones, { tipos: { LYRA: "Bolsa" }, guardarModalidades: false, completarModelos: false });
     expect(errores).toEqual([]);
     expect(operaciones).toHaveLength(3);
     expect(operaciones).toEqual(expect.arrayContaining([
-      { accion: "precio", variante_id: 2, precio: { precio_neto: 2.4, iva_porcentaje: 21, precio_compra: null }, tarifas: [{ modalidad: "tarifa", precio: 2.4, unidades: null }] },
+      { accion: "precio", variante_id: 2, precio: { precio_neto: 2.4, iva_porcentaje: 21, precio_compra: null }, modalidad: "tarifa", tarifas: [{ modalidad: "tarifa", precio: 2.4, unidades: null }] },
       { accion: "archivar", variante_id: 3 },
-      { accion: "alta", modelo: { nombre: "LYRA", referencia: "5004", tipo: "Bolsa", marca: "NEOBLU" }, color: "COLOR", talla: "TU", precio: { precio_neto: 9.5, iva_porcentaje: 21, precio_compra: null }, tarifas: [{ modalidad: "tarifa", precio: 9.5, unidades: null }] },
+      { accion: "alta", modelo: { nombre: "LYRA", referencia: "5004", tipo: "Bolsa", marca: "NEOBLU" }, color: "COLOR", talla: "TU", precio: { precio_neto: 9.5, iva_porcentaje: 21, precio_compra: null }, modalidad: "tarifa", tarifas: [{ modalidad: "tarifa", precio: 9.5, unidades: null }] },
     ]));
     expect(resultadoPrevisto(operaciones, items)).toMatchObject({ altas: 1, modelosNuevos: 1, precios: 1, subidas: 1, archivadas: 1 });
   });
@@ -276,5 +280,41 @@ describe("tallas agrupadas: siempre variantes individuales", () => {
   it("nunca se da de alta un grupo como si fuera una talla", () => {
     const falsa = { id: "x", estado: "nueva", modelo: "ORION", modeloClave: "ORION", color: "COLOR", talla: "38-52", tipo: "Camiseta", nuevo: {}, tarifas: [] };
     expect(construirOperaciones([falsa], { x: "anadir" }).errores).toEqual(["ORION COLOR: «38-52» no es una talla individual."]);
+  });
+});
+
+describe("propuesta confirmada por el propietario", () => {
+  it("ROLY: Unidad, neto y 21 %; SOL'S: su única tarifa, neto y 21 % (solo para estos formatos)", () => {
+    expect(leerTarifa(libroRoly()).formato.propuesta).toMatchObject({ modalidad: "unidad", interpretacion: "neto", iva: 21 });
+    expect(leerTarifa(libroSols()).formato.propuesta).toMatchObject({ modalidad: "tarifa", interpretacion: "neto", iva: 21 });
+  });
+
+  it("coste de adquisición = neto × 1,21, sin redondeos prematuros ni doble IVA", () => {
+    const t = leerTarifa(libroRoly());
+    const { items } = compararTarifa({ entradas: t.entradas, catalogo: [], opciones: { modalidad: "pack", interpretacion: "neto", iva: 21 } });
+    const i = buscar(items, "ALFA", "BLANCO", "M");
+    expect(i.nuevo).toEqual({ precio_neto: 1.155, iva_porcentaje: 21, precio_compra: null });
+    expect(i.costeNuevo).toBeCloseTo(1.39755, 12);
+  });
+});
+
+describe("modalidad alternativa (decisión del propietario)", () => {
+  const roly = (alternativa) => {
+    const t = leerTarifa(libroRoly());
+    return compararTarifa({ entradas: t.entradas, catalogo: [], opciones: { modalidad: "unidad", interpretacion: "neto", iva: 21, alternativa } }).items;
+  };
+
+  it("sin alternativa, lo que no tiene precio Unidad no se importa", () => {
+    expect(buscar(roly(undefined), "BETA BOLSA", "COLOR", "TU")).toMatchObject({ estado: "nueva", modalidadUsada: "unidad" });
+    expect(buscar(roly(undefined), "ALFA", "NEGRO JASPEADO", "M")).toMatchObject({ estado: "no_valida" });
+  });
+
+  it("Pack solo si el pack es de UNA unidad; los errores del archivo siguen excluidos", () => {
+    // fixture: ALFA packs of 5 -> no alternative; a pack of one unit would be used
+    expect(buscar(roly({ modalidad: "pack", soloUnidad: true }), "ALFA", "NEGRO JASPEADO", "M")).toMatchObject({ estado: "no_valida" });
+    expect(buscar(roly({ modalidad: "pack", soloUnidad: false }), "ALFA", "NEGRO JASPEADO", "M")).toMatchObject({ estado: "nueva", modalidadUsada: "pack", importe: 1.47 });
+    expect(buscar(roly({ modalidad: "pack", soloUnidad: false }), "ALFA", "COLOR", "M")).toMatchObject({ modalidadUsada: "pack", importe: 1.26 }); // #REF! in Unidad
+    expect(buscar(roly({ modalidad: "pack", soloUnidad: true }), "EPSILON", "COLOR", "M")).toMatchObject({ estado: "nueva", modalidadUsada: "pack", importe: 5.25 });
+    expect(buscar(roly(undefined), "EPSILON", "COLOR", "M")).toMatchObject({ estado: "no_valida" });
   });
 });

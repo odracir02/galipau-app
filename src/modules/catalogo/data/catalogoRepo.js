@@ -30,21 +30,26 @@ export const archivarProveedor = async (sb, id, activo) => desenvolver(await sb.
 
 // ---- Models (proveedorId null = own products)
 export const listarModelos = async (sb, proveedorId) => {
-  let q = sb.from("modelos").select("id, proveedor_id, tipo, nombre, referencia, descripcion, activo");
+  let q = sb.from("modelos").select("*");
   q = proveedorId === null ? q.is("proveedor_id", null) : q.eq("proveedor_id", proveedorId);
   return desenvolver(await q.order("nombre")) ?? [];
 };
 export const obtenerModelo = async (sb, id) => desenvolver(await sb.from("modelos").select("*").eq("id", id).single());
 
-const datosModelo = (d) => ({ tipo: d.tipo.trim(), nombre: d.nombre.trim(), ...limpiar(d, CAMPOS_MODELO) });
+// The brand is only sent when filled, so the form also works on a database without that column yet
+const datosModelo = (d) => ({ tipo: d.tipo.trim(), nombre: d.nombre.trim(), ...limpiar(d, CAMPOS_MODELO), ...(d.marca?.trim() ? { marca: d.marca.trim() } : {}) });
 export const crearModelo = async (sb, proveedorId, d) =>
   desenvolver(await sb.from("modelos").insert({ proveedor_id: proveedorId, activo: true, ...datosModelo(d) }).select("*").single(), MENSAJES);
 export const actualizarModelo = async (sb, id, d) => desenvolver(await sb.from("modelos").update(datosModelo(d)).eq("id", id).select("*").single(), MENSAJES);
 export const archivarModelo = async (sb, id, activo) => desenvolver(await sb.from("modelos").update({ activo }).eq("id", id).select("*").single());
 
 // ---- Variants
-export const listarVariantes = async (sb, modeloId) =>
-  desenvolver(await sb.from("variantes").select("id, modelo_id, color, talla, coste_cent, precio_neto, iva_porcentaje, precio_compra, activo").eq("modelo_id", modeloId).order("id")) ?? [];
+// With the alternative price modes of each variant (price lists); plain list on a database without them yet
+export const listarVariantes = async (sb, modeloId) => {
+  const conTarifas = await sb.from("variantes").select("*, variantes_tarifas(modalidad, precio, unidades)").eq("modelo_id", modeloId).order("id");
+  if (!conTarifas.error) return conTarifas.data ?? [];
+  return desenvolver(await sb.from("variantes").select("*").eq("modelo_id", modeloId).order("id")) ?? [];
+};
 
 // `precio` comes from interpretarPrecio(...).valores; coste_cent is recalculated by the database
 export const crearVariantes = async (sb, modeloId, filas) =>

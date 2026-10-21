@@ -119,7 +119,7 @@ function PaginaFichaModelo({ obtenerCliente = obtenerClienteSupabase }) {
       <div className="gx-cabecera">
         <div>
           <h1>{modelo.nombre}{!modelo.activo && <span className="gx-insignia gx-estado-importado ms-2 align-middle">Archivado</span>}</h1>
-          <p>{[modelo.tipo, proveedor?.nombre ?? "Producto propio", modelo.referencia ? `Ref. ${modelo.referencia}` : null].filter(Boolean).join(" · ")}{modelo.descripcion ? ` — ${modelo.descripcion}` : ""}</p>
+          <p>{[modelo.tipo, modelo.marca, proveedor?.nombre ?? "Producto propio", modelo.referencia ? `Ref. ${modelo.referencia}` : null].filter(Boolean).join(" · ")}{modelo.descripcion ? ` — ${modelo.descripcion}` : ""}</p>
         </div>
         <div className="gx-cabecera-acciones">
           <button type="button" className="btn btn-outline-secondary" onClick={() => setEditandoModelo(true)}>Editar modelo</button>
@@ -172,7 +172,14 @@ function PaginaFichaModelo({ obtenerCliente = obtenerClienteSupabase }) {
                     <tr key={v.id} className={v.activo ? "" : "text-muted"}>
                       <td>{v.color}{!v.activo && <span className="gx-insignia gx-estado-importado ms-2">Archivada</span>}</td>
                       <td>{v.talla}</td>
-                      <td className="d-none d-md-table-cell small">{describirPrecio(v)}</td>
+                      <td className="d-none d-md-table-cell small">
+                        {describirPrecio(v)}{v.modalidad && <span className="text-muted"> · {v.modalidad}</span>}
+                        {(v.variantes_tarifas ?? []).filter((t) => t.modalidad !== v.modalidad).length > 0 && (
+                          <div className="text-muted">
+                            Alternativas: {v.variantes_tarifas.filter((t) => t.modalidad !== v.modalidad).map((t) => `${t.modalidad} ${euro5(Number(t.precio))}${t.unidades ? ` (×${t.unidades})` : ""}`).join(" · ")}
+                          </div>
+                        )}
+                      </td>
                       <td className="text-end fw-semibold">{euro5(costeEfectivo(v))}</td>
                       <td className="text-end text-nowrap">
                         <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => setEdicion({ id: v.id, duplicar: false })}>Editar</button>{" "}

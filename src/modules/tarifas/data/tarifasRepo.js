@@ -25,8 +25,33 @@ export const leerCatalogoProveedor = async (sb, proveedorId) => {
   return { catalogo, tarifasActuales };
 };
 
-/** @returns {Promise<number>} id of the import */
-export const importarTarifa = async (sb, meta, operaciones) => desenvolver(await sb.rpc("importar_tarifa", { p_meta: meta, p_operaciones: operaciones }), MENSAJES);
+export const TAMANO_LOTE = 500;
+
+/**
+ * Sends the accepted operations in batches (each one a transaction, well below
+ * the API statement timeout). The first batch creates the import, the next ones
+ * add to it and the last one marks it complete. If a batch fails, the error
+ * carries `importacionId` so the partial import can be reviewed and reverted.
+ * @returns {Promise<number>} id of the import
+ */
+export const importarTarifa = async (sb, meta, operaciones, { tamano = TAMANO_LOTE, alAvanzar } = {}) => {
+  const lotes = Math.max(1, Math.ceil(operaciones.length / tamano));
+  let id = null;
+  for (let i = 0; i < lotes; i++) {
+    const completa = i === lotes - 1;
+    try {
+      id = desenvolver(
+        await sb.rpc("importar_tarifa", { p_meta: i === 0 ? { ...meta, completa } : { completa }, p_operaciones: operaciones.slice(i * tamano, (i + 1) * tamano), p_importacion_id: id }),
+        MENSAJES
+      );
+    } catch (e) {
+      Object.assign(e, { importacionId: id, lote: i + 1, lotes });
+      throw e;
+    }
+    alAvanzar?.(i + 1, lotes);
+  }
+  return id;
+};
 
 export const listarImportacionesTarifa = async (sb) =>
   desenvolver(await sb.from("importaciones").select("id, creada_en, proveedor_id, usuario, resumen, revertida_en").eq("tipo", "tarifa_proveedor").order("id", { ascending: false })) ?? [];

@@ -8,6 +8,9 @@ import { useConfirmar } from "../../shared/ui/contextoDialogos";
 import Cargando from "../../shared/ui/Cargando";
 import Aviso from "../../shared/ui/Aviso";
 import EstadoVacio from "../../shared/ui/EstadoVacio";
+import Paginacion from "../../shared/ui/Paginacion";
+import { paginar } from "../../shared/ui/paginado";
+import { normalizarTexto } from "../../domain/catalogo";
 
 /** Supplier card (or the own-products group): details, archive and its models. */
 function PaginaFichaProveedor({ obtenerCliente = obtenerClienteSupabase }) {
@@ -21,6 +24,8 @@ function PaginaFichaProveedor({ obtenerCliente = obtenerClienteSupabase }) {
   const [nuevoModelo, setNuevoModelo] = useState(false);
   const [archivados, setArchivados] = useState(false);
   const [mensaje, setMensaje] = useState(null);
+  const [busqueda, setBusqueda] = useState("");
+  const [pagina, setPagina] = useState(1);
 
   const cargar = useCallback(async () => {
     try {
@@ -54,7 +59,8 @@ function PaginaFichaProveedor({ obtenerCliente = obtenerClienteSupabase }) {
   };
 
   if (!proveedor && !mensaje) return <Cargando texto="Cargando proveedor…" />;
-  const visibles = (modelos ?? []).filter((m) => archivados || m.activo);
+  const q = normalizarTexto(busqueda);
+  const visibles = (modelos ?? []).filter((m) => (archivados || m.activo) && (!q || normalizarTexto(`${m.nombre} ${m.tipo} ${m.marca ?? ""} ${m.referencia ?? ""}`).includes(q)));
 
   return (
     <>
@@ -98,6 +104,10 @@ function PaginaFichaProveedor({ obtenerCliente = obtenerClienteSupabase }) {
           <input id="mod-archivados" type="checkbox" className="form-check-input" checked={archivados} onChange={(e) => setArchivados(e.target.checked)} />
           <label className="form-check-label small" htmlFor="mod-archivados">Mostrar archivados</label>
         </div>
+        {(modelos?.length ?? 0) > 10 && (
+          <input type="search" className="form-control form-control-sm ms-auto" style={{ maxWidth: "16rem" }} placeholder="Buscar modelo, marca o referencia" aria-label="Buscar modelos"
+            value={busqueda} onChange={(e) => { setBusqueda(e.target.value); setPagina(1); }} />
+        )}
       </div>
       {modelos === null ? <Cargando /> : visibles.length === 0 ? (
         <div className="gx-tabla"><EstadoVacio icono={Layers} titulo="Todavía no hay modelos">Crea uno y añade sus colores y tallas.</EstadoVacio></div>
@@ -105,12 +115,13 @@ function PaginaFichaProveedor({ obtenerCliente = obtenerClienteSupabase }) {
         <div className="gx-tabla">
           <div className="table-responsive">
             <table className="table table-hover align-middle">
-              <thead><tr><th>Modelo</th><th>Tipo</th><th className="d-none d-md-table-cell">Referencia</th><th className="d-none d-lg-table-cell">Descripción</th></tr></thead>
+              <thead><tr><th>Modelo</th><th>Tipo</th><th className="d-none d-md-table-cell">Marca</th><th className="d-none d-md-table-cell">Referencia</th><th className="d-none d-lg-table-cell">Descripción</th></tr></thead>
               <tbody>
-                {visibles.map((m) => (
+                {paginar(visibles, pagina).map((m) => (
                   <tr key={m.id} className={m.activo ? "" : "text-muted"}>
                     <td><Link to={`/catalogo/modelos/${m.id}`}>{m.nombre}</Link>{!m.activo && <span className="gx-insignia gx-estado-importado ms-2">Archivado</span>}</td>
                     <td>{m.tipo}</td>
+                    <td className="d-none d-md-table-cell">{m.marca ?? ""}</td>
                     <td className="d-none d-md-table-cell">{m.referencia ?? "—"}</td>
                     <td className="d-none d-lg-table-cell small">{m.descripcion ?? ""}</td>
                   </tr>
@@ -118,6 +129,7 @@ function PaginaFichaProveedor({ obtenerCliente = obtenerClienteSupabase }) {
               </tbody>
             </table>
           </div>
+          <Paginacion total={visibles.length} pagina={pagina} onCambiar={setPagina} etiqueta="Páginas de modelos" />
         </div>
       )}
     </>

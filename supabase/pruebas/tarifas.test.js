@@ -139,3 +139,70 @@ describe("seguridad", () => {
     expect(await codigoError(() => comoAnonimo(db, (tx) => tx.query("select * from public.variantes_tarifas")))).toBe("42501");
   });
 });
+
+describe("tarifas grandes por lotes", () => {
+  it("varios lotes forman una sola importación, que se cierra con el último y se revierte entera", async () => {
+    const alta = (n) => ({ accion: "alta", modelo: { nombre: `Modelo ${Math.floor(n / 4)}`, referencia: `R${Math.floor(n / 4)}`, tipo: "Camiseta", marca: "Marca Ficticia" }, color: "NEGRO", talla: ["S", "M", "L", "XL"][n % 4], precio: { precio_neto: 1.2345, iva_porcentaje: 21 }, tarifas: TARIFAS(1.2345) });
+    const ops = Array.from({ length: 1200 }, (_, n) => alta(n));
+    const lote = (tx, desde, hasta, id, completa) =>
+      tx.query("select public.importar_tarifa($1::jsonb, $2::jsonb, $3) id", [JSON.stringify(id ? { completa } : { ...META, proveedor_id: B.proveedor, completa }), JSON.stringify(ops.slice(desde, hasta)), id]).then((r) => r.rows[0].id);
+    const id = await comoPropietario(db, (tx) => lote(tx, 0, 500, null, false));
+    expect(await comoPropietario(db, (tx) => lote(tx, 500, 1000, id, false))).toBe(id);
+    await comoPropietario(db, (tx) => lote(tx, 1000, 1200, id, true));
+    await comoPropietario(db, async (tx) => {
+      expect((await tx.query("select resumen ->> 'lotes' lotes, resumen ->> 'completa' completa from public.importaciones where id = $1", [id])).rows[0]).toEqual({ lotes: "3", completa: "true" });
+      expect((await tx.query("select count(*)::int n from public.variantes where importacion_id = $1", [id])).rows[0].n).toBe(1200);
+      expect((await tx.query("select count(distinct modelo_id)::int n, min(marca) marca from public.v_catalogo_admin where marca is not null")).rows[0]).toEqual({ n: 300, marca: "Marca Ficticia" });
+      expect((await tx.query("select count(*)::int n from public.v_catalogo_plano where marca = 'Marca Ficticia'")).rows[0].n).toBe(1200);
+      expect((await tx.query("select count(*)::int n from public.variantes_tarifas")).rows[0].n).toBe(2400);
+    });
+    // a complete import does not accept more batches
+    expect(await codigoError(() => comoPropietario(db, (tx) => lote(tx, 0, 1, id, true)))).toBe("22023");
+    const r = await comoPropietario(db, (tx) => revertir(tx, id));
+    expect(r).toMatchObject({ variantes_borradas: 1200, modelos_borrados: 300 });
+  }, 120000);
+
+  it("el modelo elegido en la vista previa se usa por su id y debe ser del proveedor", async () => {
+    await comoPropietario(db, async (tx) => {
+      await importar(tx, [{ accion: "alta", modelo: { id: B.modelo, nombre: "Otro nombre", tipo: "Camiseta" }, color: "AZUL", talla: "M", precio: { precio_neto: 2, iva_porcentaje: 21 } }]);
+      expect((await tx.query("select modelo_id from public.variantes where color = 'AZUL'")).rows[0].modelo_id).toBe(B.modelo);
+      const ajeno = (await tx.query("insert into public.modelos (proveedor_id, tipo, nombre) values (null, 'Bolsa', 'Propia') returning id")).rows[0].id;
+      await tx.query("savepoint s");
+      await expect(importar(tx, [{ accion: "alta", modelo: { id: ajeno, nombre: "Propia", tipo: "Bolsa" }, color: "ROJO", talla: "TU", precio: { precio_neto: 1, iva_porcentaje: 21 } }])).rejects.toThrow(/does not belong/);
+      await tx.query("rollback to savepoint s");
+    });
+  });
+});
+
+describe("marca, referencia y modalidad de cada variante", () => {
+  it("completa solo la marca o la referencia vacías, nunca sobrescribe, y la reversión las vacía si nadie las cambió", async () => {
+    await comoPropietario(db, async (tx) => {
+      const sinNada = (await tx.query("insert into public.modelos (proveedor_id, tipo, nombre) values ($1, 'Polo', 'Polo Liso') returning id", [B.proveedor])).rows[0].id;
+      const id = await importar(tx, [
+        { accion: "completar_modelo", modelo_id: B.modelo, referencia: "OTRA", marca: "Marca Ficticia" }, // already has reference F100
+        { accion: "completar_modelo", modelo_id: sinNada, referencia: "P7", marca: "Marca Ficticia" },
+      ]);
+      const modelo = (m) => tx.query("select referencia, marca from public.modelos where id = $1", [m]).then((r) => r.rows[0]);
+      expect(await modelo(B.modelo)).toEqual({ referencia: "F100", marca: "Marca Ficticia" });
+      expect(await modelo(sinNada)).toEqual({ referencia: "P7", marca: "Marca Ficticia" });
+      expect((await tx.query("select marca from public.v_catalogo_plano where id = $1", [B.blancoM])).rows[0].marca).toBe("Marca Ficticia");
+      await tx.query("update public.modelos set marca = 'Cambiada a mano' where id = $1", [sinNada]);
+      expect(await revertir(tx, id)).toMatchObject({ datos_modelo_restaurados: 2 });
+      expect(await modelo(B.modelo)).toEqual({ referencia: "F100", marca: null });
+      expect(await modelo(sinNada)).toEqual({ referencia: null, marca: "Cambiada a mano" }); // later manual change kept
+    });
+  });
+
+  it("cada variante guarda de qué modalidad sale su precio, y la reversión la restaura", async () => {
+    await comoPropietario(db, async (tx) => {
+      const id = await importar(tx, [
+        { accion: "alta", modelo: { id: B.modelo, nombre: "Basica", tipo: "Camiseta" }, color: "VERDE", talla: "S", precio: { precio_neto: 5.25, iva_porcentaje: 21 }, modalidad: "pack", tarifas: [{ modalidad: "caja", precio: 5, unidades: 20 }, { modalidad: "pack", precio: 5.25, unidades: 1 }] },
+        { accion: "precio", variante_id: B.blancoM, precio: { precio_neto: 1.6, iva_porcentaje: 21 }, modalidad: "unidad" },
+      ]);
+      const filas = (await tx.query("select color, modalidad, precio_neto::float neto, coste_cent from public.variantes where color = 'VERDE' or id = $1 order by id", [B.blancoM])).rows;
+      expect(filas).toEqual([{ color: "BLANCO", modalidad: "unidad", neto: 1.6, coste_cent: 194 }, { color: "VERDE", modalidad: "pack", neto: 5.25, coste_cent: 635 }]);
+      await revertir(tx, id);
+      expect((await tx.query("select modalidad, precio_neto::float neto from public.variantes where id = $1", [B.blancoM])).rows[0]).toEqual({ modalidad: null, neto: 1.5 });
+    });
+  });
+});

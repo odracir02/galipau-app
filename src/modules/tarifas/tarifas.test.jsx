@@ -8,7 +8,7 @@ import ProveedorDialogos from "../../shared/ui/ProveedorDialogos";
 import { crearClienteFalso } from "../../shared/supabase/clienteFalso";
 import PaginaImportarTarifa from "./PaginaImportarTarifa";
 import { PaginaTarifas, PaginaImportacionTarifa } from "./PaginaTarifas";
-import { crearXlsx, TARIFA_SOLS_FICTICIA } from "./domain/xlsxPrueba";
+import { crearXlsx, TARIFA_SOLS_FICTICIA, TARIFA_ROLY_FICTICIA } from "./domain/xlsxPrueba";
 
 afterEach(() => cleanup());
 
@@ -74,13 +74,17 @@ describe("asistente de importación de tarifas", () => {
     expect(screen.getByRole("table").textContent).toMatch(/ORION.*XS a XXL/);
     await user.click(screen.getByRole("button", { name: "Siguiente" }));
 
-    // 5. no price mode chosen by default
+    // 5. pre-filled only with what the owner confirmed for this supplier's file, visible and editable
     const seguir = screen.getByRole("button", { name: "Siguiente" });
-    expect(seguir.disabled).toBe(true);
+    expect(screen.getByText(/Confirmado por el propietario para la tarifa SOL'S/)).toBeTruthy();
+    expect(screen.getByLabelText(/^Tarifa/).checked).toBe(true);
+    expect(screen.getByLabelText(/Precio neto/).checked).toBe(true);
     expect(screen.getByText(/coincide con el precio actual en 1 de 2/)).toBeTruthy();
-    await user.click(screen.getByLabelText(/^Tarifa/));
-    expect(seguir.disabled).toBe(true);
-    await user.click(screen.getByLabelText(/Precio neto/));
+    const iva = screen.getByLabelText("IVA de compra (%)");
+    expect(iva.value).toBe("21");
+    await user.clear(iva);
+    expect(seguir.disabled).toBe(true); // a VAT rate is required
+    await user.type(iva, "21");
     await user.click(seguir);
 
     // 6. conflicts: two prices for ORION WOMEN COLOR 3XL
@@ -123,12 +127,34 @@ describe("asistente de importación de tarifas", () => {
     const { p_meta, p_operaciones } = llamadas[0];
     expect(p_meta).toMatchObject({ proveedor_id: 1, modalidad: "tarifa", interpretacion: "neto", iva: 21, archivo: { nombre: "tarifa-ficticia.xlsx", formato: "sols" } });
     expect(p_meta.archivo.sha256).toMatch(/^[0-9a-f]{64}$/);
-    expect(p_operaciones.filter((o) => o.accion !== "tarifas")).toEqual([
-      { accion: "precio", variante_id: 2, precio: { precio_neto: 2.4, iva_porcentaje: 21, precio_compra: null }, tarifas: [{ modalidad: "tarifa", precio: 2.4, unidades: null }] },
+    expect(p_operaciones.filter((o) => o.accion === "completar_modelo")).toEqual([{ accion: "completar_modelo", modelo_id: 10, referencia: "5001", marca: "SOL'S" }]);
+    expect(p_operaciones.filter((o) => o.accion !== "tarifas" && o.accion !== "completar_modelo")).toEqual([
+      { accion: "precio", variante_id: 2, precio: { precio_neto: 2.4, iva_porcentaje: 21, precio_compra: null }, modalidad: "tarifa", tarifas: [{ modalidad: "tarifa", precio: 2.4, unidades: null }] },
       expect.objectContaining({ accion: "alta", modelo: { nombre: "LYRA", referencia: "5004", tipo: "Bolsa", marca: "NEOBLU" }, color: "COLOR", talla: "TU" }),
     ]);
     // 10. verification against the catalogue read again (the fake does not create variants)
     expect(screen.getByText(/Comprobado en el catálogo: 1 de 2 cambios/)).toBeTruthy();
+  });
+
+  it("ROLY: Unidad propuesta; la alternativa Pack (solo packs de 1 unidad) hay que elegirla y queda indicada", async () => {
+    const user = userEvent.setup();
+    const sb = crearClienteFalso({ tablas: { proveedores: [{ id: 5, nombre: "ROLY", activo: true }], v_catalogo_admin: [], variantes_tarifas: [] } });
+    montar(sb, "/catalogo/tarifas/importar");
+    await user.click(screen.getByRole("button", { name: "Siguiente" }));
+    await user.upload(screen.getByLabelText("Excel de la tarifa (.xlsx)"), new File([crearXlsx([{ nombre: "Tarifa", filas: TARIFA_ROLY_FICTICIA }])], "roly-ficticia.xlsx"));
+    expect(await screen.findByText(/formato ROLY/)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Siguiente" }));
+    await user.click(screen.getByRole("button", { name: "Siguiente" }));
+    expect(screen.getByLabelText(/^Unidad/).checked).toBe(true);
+    expect(screen.getByLabelText(/No importarla/).checked).toBe(true);
+    await user.click(screen.getByLabelText(/Usar el precio de Pack solo cuando el pack es de 1 unidad \(1 filas\)/));
+    await user.click(screen.getByRole("button", { name: "Siguiente" }));
+    await user.click(screen.getByRole("button", { name: "Siguiente" }));
+    await user.click(screen.getByRole("tab", { name: /Variante nueva/ }));
+    await user.type(screen.getByLabelText("Buscar en la lista"), "EPSILON");
+    const filas = [...screen.getByRole("table").querySelectorAll("tbody tr")];
+    expect(filas).toHaveLength(3); // S, M, L: one variant per size
+    expect(filas[0].textContent).toMatch(/5,25\s€ \+ 21 % IVA \(pack\)/);
   });
 
   it("un archivo que no es una tarifa se explica y no avanza", async () => {

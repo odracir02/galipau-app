@@ -9,12 +9,21 @@
 --   the import is archived instead of deleted when quotes or stock use it.
 -- * Price changes never touch stock, reservations, movements or saved quotes
 --   (quotes keep their prices in their own snapshot).
+-- * A large price list is sent in batches: the first call creates the import,
+--   the next ones (p_importacion_id) add to it, so each call stays well below
+--   the API statement timeout; the last batch marks it complete.
+-- * The brand (modelos.marca) is shown in the catalogue views for filtering;
+--   an import only FILLS an empty brand or reference of an existing model.
+-- * variantes.modalidad records which price mode gives the variant price.
 --
--- Safety: adds tables, columns and functions; widens one check. No data is
+-- Safety: adds tables, columns, an index and functions; widens one check;
+-- the two catalogue views keep their columns and gain "marca". No data is
 -- deleted or updated. Re-runnable.
 
 alter table public.modelos add column if not exists marca text;
 alter table public.proveedores add column if not exists modalidad_tarifa text;
+alter table public.variantes add column if not exists modalidad text;
+create index if not exists modelos_referencia_idx on public.modelos (proveedor_id, referencia) where referencia is not null;
 
 alter table public.importaciones add column if not exists usuario uuid default auth.uid();
 alter table public.importaciones add column if not exists proveedor_id bigint references public.proveedores on delete restrict;
@@ -36,7 +45,7 @@ create table if not exists public.variantes_tarifas (
 create table if not exists public.importaciones_cambios (
   id bigint generated always as identity primary key,
   importacion_id bigint not null references public.importaciones on delete cascade,
-  accion text not null check (accion in ('alta_proveedor', 'alta_modelo', 'alta_variante', 'precio', 'archivar', 'tarifas', 'referencia')),
+  accion text not null check (accion in ('alta_proveedor', 'alta_modelo', 'alta_variante', 'precio', 'archivar', 'tarifas', 'datos_modelo')),
   proveedor_id bigint,
   modelo_id bigint,
   variante_id bigint,
@@ -53,7 +62,7 @@ language sql
 immutable
 set search_path = ''
 as $$
-  select jsonb_build_object('precio_neto', v.precio_neto, 'iva_porcentaje', v.iva_porcentaje, 'precio_compra', v.precio_compra, 'coste_cent', v.coste_cent);
+  select jsonb_build_object('precio_neto', v.precio_neto, 'iva_porcentaje', v.iva_porcentaje, 'precio_compra', v.precio_compra, 'coste_cent', v.coste_cent, 'modalidad', v.modalidad);
 $$;
 
 -- Price modes of a variant as JSON (for the change log)
@@ -84,17 +93,52 @@ begin
 end;
 $$;
 
+-- Fills an empty reference and/or brand of an existing model (never overwrites); logs what changed
+create or replace function public.completar_datos_modelo(p_importacion_id bigint, p_modelo_id bigint, p_referencia text, p_marca text)
+returns void
+language plpgsql
+set search_path = ''
+as $$
+declare
+  m public.modelos;
+  v_antes jsonb := '{}'::jsonb;
+  v_despues jsonb := '{}'::jsonb;
+begin
+  select * into m from public.modelos where id = p_modelo_id for update;
+  if not found then
+    raise exception 'Model % not found', p_modelo_id using errcode = 'P0002';
+  end if;
+  if m.referencia is null and nullif(trim(p_referencia), '') is not null then
+    v_antes := v_antes || jsonb_build_object('referencia', null);
+    v_despues := v_despues || jsonb_build_object('referencia', trim(p_referencia));
+  end if;
+  if m.marca is null and nullif(trim(p_marca), '') is not null then
+    v_antes := v_antes || jsonb_build_object('marca', null);
+    v_despues := v_despues || jsonb_build_object('marca', trim(p_marca));
+  end if;
+  if v_despues = '{}'::jsonb then
+    return;
+  end if;
+  update public.modelos
+    set referencia = coalesce(referencia, v_despues ->> 'referencia'), marca = coalesce(marca, v_despues ->> 'marca')
+    where id = p_modelo_id;
+  insert into public.importaciones_cambios (importacion_id, accion, modelo_id, antes, despues) values (p_importacion_id, 'datos_modelo', p_modelo_id, v_antes, v_despues);
+end;
+$$;
+
 /*
  * p_meta: { proveedor_id?, proveedor_nombre?, modalidad, interpretacion, archivo: { nombre, sha256, formato }, resumen }
  * p_operaciones: [
  *   { accion: 'alta', modelo: { nombre, referencia, tipo, marca, descripcion }, color, talla, precio: { precio_neto, iva_porcentaje, precio_compra }, coste_cent, tarifas: [...] },
  *   { accion: 'precio', variante_id, precio: {...}, coste_cent, tarifas: [...] },
  *   { accion: 'tarifas', variante_id, tarifas: [...] },
- *   { accion: 'archivar', variante_id }
+ *   { accion: 'archivar', variante_id },
+ *   { accion: 'completar_modelo', modelo_id, referencia, marca }   (fills empty fields only)
+ * 'alta' and 'precio' may carry `modalidad`: the price mode their price comes from.
  * ]
  * Only the operations the owner accepted in the preview are sent.
  */
-create or replace function public.importar_tarifa(p_meta jsonb, p_operaciones jsonb)
+create or replace function public.importar_tarifa(p_meta jsonb, p_operaciones jsonb, p_importacion_id bigint default null)
 returns bigint
 language plpgsql
 security invoker
@@ -115,45 +159,64 @@ begin
   if jsonb_typeof(p_operaciones) <> 'array' or jsonb_array_length(p_operaciones) = 0 then
     raise exception 'Nothing to import' using errcode = '22023';
   end if;
-  insert into public.importaciones (tipo, resumen) values ('tarifa_proveedor', coalesce(p_meta, '{}'::jsonb) - 'proveedor_id') returning id into v_imp;
-
-  if v_prov is null then
-    select id into v_prov from public.proveedores where lower(nombre) = lower(trim(p_meta ->> 'proveedor_nombre'));
+  if p_importacion_id is null then
+    insert into public.importaciones (tipo, resumen)
+    values ('tarifa_proveedor', (coalesce(p_meta, '{}'::jsonb) - 'proveedor_id') || jsonb_build_object('completa', coalesce((p_meta ->> 'completa')::boolean, false), 'lotes', 1))
+    returning id into v_imp;
     if v_prov is null then
-      insert into public.proveedores (nombre, importacion_id) values (trim(p_meta ->> 'proveedor_nombre'), v_imp) returning id into v_prov;
-      insert into public.importaciones_cambios (importacion_id, accion, proveedor_id) values (v_imp, 'alta_proveedor', v_prov);
+      select id into v_prov from public.proveedores where lower(nombre) = lower(trim(p_meta ->> 'proveedor_nombre'));
+      if v_prov is null then
+        insert into public.proveedores (nombre, importacion_id) values (trim(p_meta ->> 'proveedor_nombre'), v_imp) returning id into v_prov;
+        insert into public.importaciones_cambios (importacion_id, accion, proveedor_id) values (v_imp, 'alta_proveedor', v_prov);
+      end if;
     end if;
-  end if;
-  update public.importaciones set proveedor_id = v_prov where id = v_imp;
-  if nullif(p_meta ->> 'modalidad', '') is not null then
-    update public.proveedores set modalidad_tarifa = p_meta ->> 'modalidad' where id = v_prov;
+    update public.importaciones set proveedor_id = v_prov where id = v_imp;
+    if nullif(p_meta ->> 'modalidad', '') is not null then
+      update public.proveedores set modalidad_tarifa = p_meta ->> 'modalidad' where id = v_prov;
+    end if;
+  else
+    -- next batch of the same import
+    select id, proveedor_id into v_imp, v_prov from public.importaciones
+      where id = p_importacion_id and tipo = 'tarifa_proveedor' and revertida_en is null and not coalesce((resumen ->> 'completa')::boolean, false)
+      for update;
+    if v_imp is null then
+      raise exception 'Price-list import not found, complete or reverted' using errcode = '22023';
+    end if;
+    update public.importaciones
+      set resumen = resumen || jsonb_build_object('lotes', coalesce((resumen ->> 'lotes')::int, 1) + 1, 'completa', coalesce((p_meta ->> 'completa')::boolean, false))
+      where id = v_imp;
   end if;
 
   for op in select * from jsonb_array_elements(p_operaciones) loop
     if op ->> 'accion' = 'alta' then
-      -- Model: same reference first, then same name (ignoring case); created if missing
-      select id into v_mod from public.modelos
-        where proveedor_id = v_prov
-          and ((nullif(op -> 'modelo' ->> 'referencia', '') is not null and referencia = op -> 'modelo' ->> 'referencia')
-               or lower(nombre) = lower(op -> 'modelo' ->> 'nombre'))
-        order by (referencia = op -> 'modelo' ->> 'referencia') desc nulls last, id
-        limit 1;
+      -- Model: the one chosen in the preview, else same reference, else same name (ignoring case); created if missing
+      v_mod := null;
+      if nullif(op -> 'modelo' ->> 'id', '') is not null then
+        select id into v_mod from public.modelos where id = (op -> 'modelo' ->> 'id')::bigint and proveedor_id = v_prov;
+        if v_mod is null then
+          raise exception 'Model % does not belong to this supplier', op -> 'modelo' ->> 'id' using errcode = 'P0002';
+        end if;
+      end if;
+      if v_mod is null and nullif(op -> 'modelo' ->> 'referencia', '') is not null then
+        select id into v_mod from public.modelos where proveedor_id = v_prov and referencia = op -> 'modelo' ->> 'referencia' order by id limit 1;
+      end if;
+      if v_mod is null then
+        select id into v_mod from public.modelos where proveedor_id = v_prov and lower(nombre) = lower(op -> 'modelo' ->> 'nombre') limit 1;
+      end if;
       if v_mod is null then
         insert into public.modelos (proveedor_id, tipo, nombre, referencia, marca, descripcion, importacion_id)
         values (v_prov, op -> 'modelo' ->> 'tipo', op -> 'modelo' ->> 'nombre', nullif(op -> 'modelo' ->> 'referencia', ''),
                 nullif(op -> 'modelo' ->> 'marca', ''), nullif(op -> 'modelo' ->> 'descripcion', ''), v_imp)
         returning id into v_mod;
         insert into public.importaciones_cambios (importacion_id, accion, proveedor_id, modelo_id) values (v_imp, 'alta_modelo', v_prov, v_mod);
-      elsif nullif(op -> 'modelo' ->> 'referencia', '') is not null
-            and (select referencia from public.modelos where id = v_mod) is null then
-        -- Fill a missing manufacturer reference (nothing else of an existing model changes)
-        update public.modelos set referencia = op -> 'modelo' ->> 'referencia' where id = v_mod;
-        insert into public.importaciones_cambios (importacion_id, accion, modelo_id, antes, despues)
-        values (v_imp, 'referencia', v_mod, jsonb_build_object('referencia', null), jsonb_build_object('referencia', op -> 'modelo' ->> 'referencia'));
+      else
+        -- an existing model only gets an empty reference or brand filled (nothing else changes)
+        perform public.completar_datos_modelo(v_imp, v_mod, op -> 'modelo' ->> 'referencia', op -> 'modelo' ->> 'marca');
       end if;
-      insert into public.variantes (modelo_id, color, talla, coste_cent, precio_neto, iva_porcentaje, precio_compra, importacion_id)
+      insert into public.variantes (modelo_id, color, talla, coste_cent, precio_neto, iva_porcentaje, precio_compra, modalidad, importacion_id)
       values (v_mod, op ->> 'color', op ->> 'talla', coalesce((op ->> 'coste_cent')::integer, 0),
-              (op -> 'precio' ->> 'precio_neto')::numeric, (op -> 'precio' ->> 'iva_porcentaje')::numeric, (op -> 'precio' ->> 'precio_compra')::numeric, v_imp)
+              (op -> 'precio' ->> 'precio_neto')::numeric, (op -> 'precio' ->> 'iva_porcentaje')::numeric, (op -> 'precio' ->> 'precio_compra')::numeric,
+              nullif(op ->> 'modalidad', ''), v_imp)
       returning id into v_id;
       perform public.guardar_tarifas_variante(v_id, op -> 'tarifas', v_imp);
       insert into public.importaciones_cambios (importacion_id, accion, modelo_id, variante_id, despues)
@@ -167,7 +230,8 @@ begin
       v_antes := public.precio_variante_json(v_var) || jsonb_build_object('tarifas', public.tarifas_variante_json(v_var.id));
       update public.variantes
         set precio_neto = (op -> 'precio' ->> 'precio_neto')::numeric, iva_porcentaje = (op -> 'precio' ->> 'iva_porcentaje')::numeric,
-            precio_compra = (op -> 'precio' ->> 'precio_compra')::numeric, coste_cent = coalesce((op ->> 'coste_cent')::integer, coste_cent)
+            precio_compra = (op -> 'precio' ->> 'precio_compra')::numeric, coste_cent = coalesce((op ->> 'coste_cent')::integer, coste_cent),
+            modalidad = coalesce(nullif(op ->> 'modalidad', ''), modalidad)
         where id = v_var.id
         returning * into v_var;
       perform public.guardar_tarifas_variante(v_var.id, op -> 'tarifas', v_imp);
@@ -186,6 +250,12 @@ begin
       if found then
         insert into public.importaciones_cambios (importacion_id, accion, variante_id) values (v_imp, 'archivar', (op ->> 'variante_id')::bigint);
       end if;
+
+    elsif op ->> 'accion' = 'completar_modelo' then
+      if not exists (select 1 from public.modelos where id = (op ->> 'modelo_id')::bigint and proveedor_id = v_prov) then
+        raise exception 'Model % does not belong to this supplier', op ->> 'modelo_id' using errcode = 'P0002';
+      end if;
+      perform public.completar_datos_modelo(v_imp, (op ->> 'modelo_id')::bigint, op ->> 'referencia', op ->> 'marca');
     else
       raise exception 'Unknown operation %', op ->> 'accion' using errcode = '22023';
     end if;
@@ -221,7 +291,7 @@ declare
   c public.importaciones_cambios;
   v public.variantes;
   r jsonb := jsonb_build_object('precios_restaurados', 0, 'precios_conservados', 0, 'variantes_borradas', 0, 'variantes_archivadas', 0,
-                                'reactivadas', 0, 'tarifas_restauradas', 0, 'modelos_borrados', 0, 'proveedores_borrados', 0, 'referencias_restauradas', 0);
+                                'reactivadas', 0, 'tarifas_restauradas', 0, 'modelos_borrados', 0, 'proveedores_borrados', 0, 'datos_modelo_restaurados', 0);
   en_uso boolean;
 begin
   if not public.es_propietario() then
@@ -236,7 +306,8 @@ begin
       if found and public.precio_variante_json(v) = (c.despues - 'tarifas') then
         update public.variantes
           set precio_neto = (c.antes ->> 'precio_neto')::numeric, iva_porcentaje = (c.antes ->> 'iva_porcentaje')::numeric,
-              precio_compra = (c.antes ->> 'precio_compra')::numeric, coste_cent = (c.antes ->> 'coste_cent')::integer
+              precio_compra = (c.antes ->> 'precio_compra')::numeric, coste_cent = (c.antes ->> 'coste_cent')::integer,
+              modalidad = c.antes ->> 'modalidad'
           where id = v.id;
         perform public.restaurar_tarifas_variante(v.id, c.antes -> 'tarifas');
         r := jsonb_set(r, '{precios_restaurados}', to_jsonb((r ->> 'precios_restaurados')::int + 1));
@@ -269,9 +340,14 @@ begin
       else
         update public.modelos set activo = false where id = c.modelo_id;
       end if;
-    elsif c.accion = 'referencia' then
-      update public.modelos set referencia = null where id = c.modelo_id and referencia = c.despues ->> 'referencia';
-      if found then r := jsonb_set(r, '{referencias_restauradas}', to_jsonb((r ->> 'referencias_restauradas')::int + 1)); end if;
+    elsif c.accion = 'datos_modelo' then
+      -- only fields still holding the imported value go back to empty
+      update public.modelos
+        set referencia = case when c.despues ? 'referencia' and referencia = c.despues ->> 'referencia' then null else referencia end,
+            marca = case when c.despues ? 'marca' and marca = c.despues ->> 'marca' then null else marca end
+        where id = c.modelo_id
+          and ((c.despues ? 'referencia' and referencia = c.despues ->> 'referencia') or (c.despues ? 'marca' and marca = c.despues ->> 'marca'));
+      if found then r := jsonb_set(r, '{datos_modelo_restaurados}', to_jsonb((r ->> 'datos_modelo_restaurados')::int + 1)); end if;
     elsif c.accion = 'alta_proveedor' then
       delete from public.proveedores p where p.id = c.proveedor_id and not exists (select 1 from public.modelos m where m.proveedor_id = p.id);
       if found then r := jsonb_set(r, '{proveedores_borrados}', to_jsonb((r ->> 'proveedores_borrados')::int + 1)); end if;
@@ -307,6 +383,40 @@ begin
 end;
 $$;
 
+-- Catalogue views: same columns as before plus the brand at the end
+create or replace view public.v_catalogo_plano with (security_invoker = true) as
+  select v.id, m.tipo, coalesce(p.nombre, 'Productos propios') as proveedor, m.nombre as modelo, v.talla, v.color, v.coste_cent,
+    v.precio_neto, v.iva_porcentaje,
+    case
+      when v.precio_neto is not null then v.precio_neto * (100 + v.iva_porcentaje) / 100.0
+      when v.precio_compra is not null then v.precio_compra
+      else v.coste_cent / 100.0
+    end as coste,
+    m.referencia,
+    (m.proveedor_id is null) as propio,
+    m.marca
+  from public.variantes v
+  join public.modelos m on m.id = v.modelo_id
+  left join public.proveedores p on p.id = m.proveedor_id
+  where v.activo and m.activo and (p.id is null or p.activo);
+
+create or replace view public.v_catalogo_admin with (security_invoker = true) as
+  select v.id as variante_id, m.id as modelo_id, p.id as proveedor_id,
+    p.nombre as proveedor, (m.proveedor_id is null) as propio,
+    m.tipo, m.nombre as modelo, m.referencia, v.color, v.talla,
+    v.precio_neto, v.iva_porcentaje, v.precio_compra, v.coste_cent,
+    case
+      when v.precio_neto is not null then v.precio_neto * (100 + v.iva_porcentaje) / 100.0
+      when v.precio_compra is not null then v.precio_compra
+      else v.coste_cent / 100.0
+    end as coste,
+    v.activo as variante_activa, m.activo as modelo_activo, coalesce(p.activo, true) as proveedor_activo,
+    (v.activo and m.activo and coalesce(p.activo, true)) as disponible,
+    m.marca
+  from public.variantes v
+  join public.modelos m on m.id = v.modelo_id
+  left join public.proveedores p on p.id = m.proveedor_id;
+
 alter table public.variantes_tarifas enable row level security;
 alter table public.importaciones_cambios enable row level security;
 drop policy if exists variantes_tarifas_propietario on public.variantes_tarifas;
@@ -324,13 +434,15 @@ grant insert on public.importaciones_cambios to authenticated;
 drop policy if exists importaciones_cambios_alta on public.importaciones_cambios;
 create policy importaciones_cambios_alta on public.importaciones_cambios for insert to authenticated with check (public.es_propietario());
 
-revoke execute on function public.importar_tarifa(jsonb, jsonb) from anon, public;
+revoke execute on function public.importar_tarifa(jsonb, jsonb, bigint) from anon, public;
 revoke execute on function public.revertir_tarifa(bigint) from anon, public;
 revoke execute on function public.guardar_tarifas_variante(bigint, jsonb, bigint) from anon, public;
 revoke execute on function public.restaurar_tarifas_variante(bigint, jsonb) from anon, public;
 revoke execute on function public.precio_variante_json(public.variantes) from anon, public;
+revoke execute on function public.completar_datos_modelo(bigint, bigint, text, text) from anon, public;
+grant execute on function public.completar_datos_modelo(bigint, bigint, text, text) to authenticated;
 revoke execute on function public.tarifas_variante_json(bigint) from anon, public;
-grant execute on function public.importar_tarifa(jsonb, jsonb) to authenticated;
+grant execute on function public.importar_tarifa(jsonb, jsonb, bigint) to authenticated;
 grant execute on function public.revertir_tarifa(bigint) to authenticated;
 grant execute on function public.guardar_tarifas_variante(bigint, jsonb, bigint) to authenticated;
 grant execute on function public.restaurar_tarifas_variante(bigint, jsonb) to authenticated;

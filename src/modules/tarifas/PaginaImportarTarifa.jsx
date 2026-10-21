@@ -5,6 +5,8 @@ import { obtenerClienteSupabase } from "../../shared/supabase/cliente";
 import { useConfirmar } from "../../shared/ui/contextoDialogos";
 import Cabecera from "../../shared/ui/Cabecera";
 import Aviso from "../../shared/ui/Aviso";
+import Paginacion from "../../shared/ui/Paginacion";
+import { paginar } from "../../shared/ui/paginado";
 import { NavCatalogo } from "../catalogo/PaginaCatalogo";
 import { TIPOS_SUGERIDOS, describirPrecio, euro5 } from "../catalogo/domain/catalogo";
 import { leerXlsx, huellaArchivo } from "./domain/xlsx";
@@ -13,11 +15,10 @@ import { clave, interpretarListaTallas } from "./domain/normalizar";
 import {
   ESTADOS, NOMBRE_ESTADO, INTERPRETACIONES, compararTarifa, construirOperaciones, decisionesPosibles, resultadoPrevisto, verificarImportacion, gruposPendientes,
 } from "./domain/comparar";
-import { listarProveedoresTarifa, leerCatalogoProveedor, importarTarifa } from "./data/tarifasRepo";
+import { listarProveedoresTarifa, leerCatalogoProveedor, importarTarifa, TAMANO_LOTE } from "./data/tarifasRepo";
 
 const PASOS = ["Proveedor", "Archivo", "Análisis", "Vista previa", "Tarifa", "Conflictos", "Decisiones", "Resultado previsto", "Confirmar", "Verificación"];
 const NOMBRE_DECISION = { ignorar: "Ignorar", anadir: "Añadir", actualizar: "Actualizar precio", archivar: "Archivar" };
-const MAX_FILAS = 200;
 // File contents (FileReader fallback for browsers without Blob.arrayBuffer)
 const leerBytes = (fichero) =>
   typeof fichero.arrayBuffer === "function"
@@ -62,15 +63,28 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
   const [archivo, setArchivo] = useState(null);
   const [lectura, setLectura] = useState(null);
   const [catalogo, setCatalogo] = useState(null);
-  const [opciones, setOpciones] = useState({ modalidad: "", interpretacion: "", iva: "21" });
+  const [opciones, setOpciones] = useState({ modalidad: "", interpretacion: "", iva: "", alternativa: "" }); // alternativa: "pack|1" = Pack only for packs of one unit
   const [resoluciones, setResoluciones] = useState({ equivalencias: {}, filaElegida: {} });
   const [textosGrupo, setTextosGrupo] = useState({}); // size-group key -> sizes typed by the owner
   const [decisiones, setDecisiones] = useState({});
   const [tipos, setTipos] = useState({});
   const [guardarModalidades, setGuardarModalidades] = useState(true);
-  const [filtro, setFiltro] = useState("");
+  const [tipoTodos, setTipoTodos] = useState("");
+  const [paginaTipos, setPaginaTipos] = useState(1);
+  const [filtro, setFiltroTexto] = useState("");
+  const [pagina, setPagina] = useState(1);
+  const setFiltro = (v) => {
+    setFiltroTexto(v);
+    setPagina(1);
+  };
+  // each step starts on its first page and without a search
+  const cambiarPaso = (n) => {
+    setPaso(n);
+    setPagina(1);
+    setFiltroTexto("");
+  };
   const [pestana, setPestana] = useState("diferente");
-  const [importando, setImportando] = useState(false);
+  const [importando, setImportando] = useState(null); // { lote, lotes } while applying
   const [hecho, setHecho] = useState(null);
 
   useEffect(() => {
@@ -98,7 +112,6 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
     setDecisiones({});
     setResoluciones({ equivalencias: {}, filaElegida: {} });
     setTextosGrupo({});
-    setOpciones((o) => ({ ...o, modalidad: "" }));
     if (!fichero) return;
     try {
       const datos = await leerBytes(fichero);
@@ -106,7 +119,9 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
       const t = leerTarifa(libro, formatoSel || null);
       setArchivo({ nombre: fichero.name, tamano: fichero.size, sha256: await huellaArchivo(datos) });
       setLectura(t);
-      setPaso(3);
+      // only what the owner confirmed for this supplier's file; otherwise nothing is chosen
+      setOpciones(t.formato.propuesta ? { modalidad: t.formato.propuesta.modalidad, interpretacion: t.formato.propuesta.interpretacion, iva: String(t.formato.propuesta.iva), alternativa: "" } : { modalidad: "", interpretacion: "", iva: "", alternativa: "" });
+      cambiarPaso(3);
     } catch (e) {
       setError(e.message);
     }
@@ -126,7 +141,22 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
 
   const ivaNum = Number(String(opciones.iva).replace(",", "."));
   const opcionesListas = Boolean(opciones.modalidad && opciones.interpretacion && opciones.iva !== "" && ivaNum >= 0 && ivaNum <= 100);
-  const opcionesCalculo = useMemo(() => ({ modalidad: opciones.modalidad, interpretacion: opciones.interpretacion, iva: ivaNum }), [opciones.modalidad, opciones.interpretacion, ivaNum]);
+  const opcionesCalculo = useMemo(() => {
+    const [alt, uno] = opciones.alternativa.split("|");
+    return { modalidad: opciones.modalidad, interpretacion: opciones.interpretacion, iva: ivaNum, ...(alt && alt !== opciones.modalidad ? { alternativa: { modalidad: alt, soloUnidad: uno === "1" } } : {}) };
+  }, [opciones.modalidad, opciones.interpretacion, opciones.alternativa, ivaNum]);
+  // rows without a price in the chosen mode, and how many each alternative would cover
+  const sinPrecio = useMemo(() => {
+    if (!lectura || !opciones.modalidad) return null;
+    const filas = lectura.entradas.filter((e) => Object.keys(e.precios).length > 0 && !(opciones.modalidad in e.precios));
+    return {
+      filas: filas.length,
+      por: Object.fromEntries(lectura.formato.modalidades.filter((m) => m.id !== opciones.modalidad).map((m) => [m.id, {
+        siempre: filas.filter((e) => m.id in e.precios).length,
+        unidad: filas.filter((e) => m.id in e.precios && e.unidades[m.id] === 1).length,
+      }])),
+    };
+  }, [lectura, opciones.modalidad]);
 
   // size groups split by the owner: only lists of individual sizes without errors count
   const grupoResuelto = useMemo(() => {
@@ -185,7 +215,7 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
       aceptar: "Aplicar tarifa",
     });
     if (!ok) return;
-    setImportando(true);
+    setImportando({ lote: 0, lotes: Math.ceil(operaciones.length / TAMANO_LOTE) });
     setError(null);
     try {
       const sb = await obtenerCliente();
@@ -193,28 +223,31 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
       const meta = {
         ...(proveedor ? { proveedor_id: proveedor.id } : { proveedor_nombre: nombreProveedor }),
         modalidad: opciones.modalidad,
+        alternativa: opcionesCalculo.alternativa ?? null,
         interpretacion: opciones.interpretacion,
         iva: ivaNum,
         archivo: { nombre: archivo.nombre, tamano: archivo.tamano, sha256: archivo.sha256, formato: lectura.formato.id, hoja: lectura.hoja },
         resumen: { analisis: comparacion.resumen.porEstado, operaciones: conteo(operaciones), previsto },
         resoluciones: { equivalencias: resoluciones.equivalencias, filaElegida: resoluciones.filaElegida, tallasGrupo: resolucionesEfectivas.tallasGrupo },
       };
-      const id = await importarTarifa(sb, meta, operaciones);
+      const id = await importarTarifa(sb, meta, operaciones, { alAvanzar: (lote, lotes) => setImportando({ lote, lotes }) });
       const provId = proveedor?.id ?? (await listarProveedoresTarifa(sb)).find((p) => clave(p.nombre) === clave(nombreProveedor))?.id;
       const despues = provId ? await leerCatalogoProveedor(sb, provId) : { catalogo: [], tarifasActuales: {} };
       const itemsDespues = compararTarifa({ entradas: lectura.entradas, catalogo: despues.catalogo, opciones: opcionesCalculo, resoluciones: resolucionesEfectivas }).items;
-      setHecho({ id, ...verificarImportacion(operaciones, itemsDespues, despues.catalogo), total: operaciones.filter((o) => o.accion !== "tarifas").length });
-      setPaso(10);
+      setHecho({ id, ...verificarImportacion(operaciones, itemsDespues, despues.catalogo), total: operaciones.filter((o) => o.accion !== "tarifas" && o.accion !== "completar_modelo").length });
+      cambiarPaso(10);
     } catch (e) {
-      setError(e.message);
+      setError(e.importacionId ? `${e.message} Se aplicaron ${e.lote - 1} de ${e.lotes} lotes (importación nº ${e.importacionId}): revísala o reviértela en el historial de tarifas.` : e.message);
     } finally {
-      setImportando(false);
+      setImportando(null);
     }
   };
 
   const conflictos = items.filter((i) => i.estado === "ambigua");
   const modelosDudosos = [...new Map(conflictos.filter((i) => i.conflicto === "modelo").map((i) => [i.modeloClave, i])).values()];
   const preciosDudosos = conflictos.filter((i) => i.conflicto === "precios");
+  const entradasVista = (lectura?.entradas ?? []).filter((e) => !filtro || clave(`${e.modelo} ${e.marca ?? ""} ${e.referencia ?? ""} ${e.colorTexto}`).includes(clave(filtro)));
+  const altasVista = altas.filter((o) => !filtro || clave(`${o.modelo.nombre} ${o.modelo.marca ?? ""} ${o.color} ${o.talla}`).includes(clave(filtro)));
   const listaPestana = items.filter((i) => i.estado === pestana && (!filtro || clave(`${i.modelo} ${i.referencia ?? ""} ${i.color} ${i.talla}`).includes(clave(filtro))));
 
   return (
@@ -244,7 +277,7 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
               </select>
             </div>
           </div>
-          <Navegar paso={paso} setPaso={setPaso} />
+          <Navegar paso={paso} setPaso={cambiarPaso} />
         </section>
       )}
 
@@ -256,7 +289,7 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
           <p className="small text-muted mt-2 mb-0">
             <ShieldCheck size={14} aria-hidden="true" /> El archivo se lee en este navegador, solo los valores (sin fórmulas ni macros). No se sube ni se guarda.
           </p>
-          <Navegar paso={paso} setPaso={setPaso} puedeSeguir={Boolean(lectura)} />
+          <Navegar paso={paso} setPaso={cambiarPaso} puedeSeguir={Boolean(lectura)} />
         </section>
       )}
 
@@ -279,7 +312,7 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
             <dt className="col-sm-4">Filas descartadas</dt><dd className="col-sm-8">{lectura.descartadas.length} (notas, precios a consultar)</dd>
             <dt className="col-sm-4">Catálogo actual del proveedor</dt><dd className="col-sm-8">{catalogo ? `${catalogo.catalogo.length} variantes` : "Cargando…"}</dd>
           </dl>
-          <Navegar paso={paso} setPaso={setPaso} puedeSeguir={Boolean(catalogo)} />
+          <Navegar paso={paso} setPaso={cambiarPaso} puedeSeguir={Boolean(catalogo)} />
         </section>
       )}
 
@@ -291,7 +324,7 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
             <table className="table table-sm mb-0 small">
               <thead><tr><th>Fila</th><th>Ref.</th><th>Modelo</th><th>Talla</th><th>Color</th>{lectura.formato.modalidades.map((m) => <th key={m.id} className="text-end">{m.nombre}</th>)}<th>Avisos</th></tr></thead>
               <tbody>
-                {lectura.entradas.filter((e) => !filtro || clave(`${e.modelo} ${e.referencia ?? ""} ${e.colorTexto}`).includes(clave(filtro))).slice(0, MAX_FILAS).map((e) => (
+                {paginar(entradasVista, pagina).map((e) => (
                   <tr key={e.fila}>
                     <td>{e.fila}</td><td>{e.referencia}</td><td>{e.modelo}{e.marca && <span className="text-muted"> · {e.marca}</span>}</td>
                     <td>{e.tallaTexto}{e.tallas && e.tallas.join(",") !== e.tallaTexto && <span className="text-muted"> → {e.tallas.join(", ")}</span>}{e.grupo && <span className="text-muted"> (agrupada)</span>}</td>
@@ -303,20 +336,25 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
               </tbody>
             </table>
           </div>
-          <p className="small text-muted mt-1">Se muestran como máximo {MAX_FILAS} filas; usa la búsqueda para ver el resto.</p>
-          <Navegar paso={paso} setPaso={setPaso} />
+          <Paginacion total={entradasVista.length} pagina={pagina} onCambiar={setPagina} etiqueta="Páginas de la vista previa" />
+          <Navegar paso={paso} setPaso={cambiarPaso} />
         </section>
       )}
 
       {paso === 5 && lectura && (
         <section aria-labelledby="t-tarifa">
           <h2 id="t-tarifa" className="h5">5. Tarifa que se usará en los presupuestos</h2>
-          <p className="small text-muted">Elige tú la modalidad y cómo leer los precios: no hay ninguna marcada por defecto. Las demás modalidades se guardan como alternativas.</p>
+          {lectura.formato.propuesta ? (
+            <Aviso tipo="info">{lectura.formato.propuesta.nota} Revísalo antes de seguir.</Aviso>
+          ) : (
+            <p className="small text-muted">Elige tú la modalidad y cómo leer los precios: no hay ninguna marcada por defecto. Las demás modalidades se guardan como alternativas.</p>
+          )}
+          <p className="small text-muted">El coste que usa la calculadora es neto × (1 + IVA) con precio neto, o el precio tal cual si ya lleva el IVA (nunca se suma dos veces). La modalidad no cambia sola según la cantidad.</p>
           <fieldset className="mb-3">
             <legend className="fs-6 fw-semibold">Modalidad</legend>
             {lectura.formato.modalidades.map((m) => (
               <div className="form-check" key={m.id}>
-                <input className="form-check-input" type="radio" name="modalidad" id={`mod-${m.id}`} checked={opciones.modalidad === m.id} onChange={() => setOpciones((o) => ({ ...o, modalidad: m.id }))} />
+                <input className="form-check-input" type="radio" name="modalidad" id={`mod-${m.id}`} checked={opciones.modalidad === m.id} onChange={() => setOpciones((o) => ({ ...o, modalidad: m.id, alternativa: "" }))} />
                 <label className="form-check-label" htmlFor={`mod-${m.id}`}>
                   {m.nombre}
                   {catalogo?.catalogo.length > 0 && <span className="text-muted small"> — coincide con el precio actual en {coincidencias[m.id] ?? 0} de {catalogo.catalogo.length} variantes</span>}
@@ -324,6 +362,28 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
               </div>
             ))}
           </fieldset>
+          {sinPrecio && sinPrecio.filas > 0 && lectura.formato.modalidades.length > 1 && (
+            <fieldset className="mb-3">
+              <legend className="fs-6 fw-semibold">Si una variante no tiene precio de {lectura.formato.modalidades.find((m) => m.id === opciones.modalidad)?.nombre} ({sinPrecio.filas} filas)…</legend>
+              <div className="form-check">
+                <input className="form-check-input" type="radio" name="alternativa" id="alt-ninguna" checked={!opciones.alternativa} onChange={() => setOpciones((o) => ({ ...o, alternativa: "" }))} />
+                <label className="form-check-label" htmlFor="alt-ninguna">No importarla (queda como registro no válido)</label>
+              </div>
+              {lectura.formato.modalidades.filter((m) => m.id !== opciones.modalidad && sinPrecio.por[m.id]?.siempre > 0).flatMap((m) => [
+                m.unidades && sinPrecio.por[m.id].unidad > 0 && (
+                  <div className="form-check" key={`${m.id}|1`}>
+                    <input className="form-check-input" type="radio" name="alternativa" id={`alt-${m.id}-1`} checked={opciones.alternativa === `${m.id}|1`} onChange={() => setOpciones((o) => ({ ...o, alternativa: `${m.id}|1` }))} />
+                    <label className="form-check-label" htmlFor={`alt-${m.id}-1`}>Usar el precio de {m.nombre} solo cuando el {m.nombre.toLowerCase()} es de 1 unidad ({sinPrecio.por[m.id].unidad} filas)</label>
+                  </div>
+                ),
+                <div className="form-check" key={`${m.id}|0`}>
+                  <input className="form-check-input" type="radio" name="alternativa" id={`alt-${m.id}-0`} checked={opciones.alternativa === `${m.id}|0`} onChange={() => setOpciones((o) => ({ ...o, alternativa: `${m.id}|0` }))} />
+                  <label className="form-check-label" htmlFor={`alt-${m.id}-0`}>Usar siempre el precio de {m.nombre} ({sinPrecio.por[m.id].siempre} filas)</label>
+                </div>,
+              ])}
+              <div className="form-text">Cada variante guarda de qué modalidad sale su precio. Las filas con errores del archivo quedan fuera salvo que elijas usar otra modalidad siempre.</div>
+            </fieldset>
+          )}
           <fieldset className="mb-3">
             <legend className="fs-6 fw-semibold">Los precios del archivo son…</legend>
             {Object.entries(INTERPRETACIONES).map(([k, texto]) => (
@@ -337,7 +397,7 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
             <label className="form-label" htmlFor="iva">IVA de compra (%)</label>
             <input id="iva" className="form-control" inputMode="decimal" value={opciones.iva} onChange={(e) => setOpciones((o) => ({ ...o, iva: e.target.value }))} />
           </div>
-          <Navegar paso={paso} setPaso={setPaso} puedeSeguir={opcionesListas} />
+          <Navegar paso={paso} setPaso={cambiarPaso} puedeSeguir={opcionesListas} />
         </section>
       )}
 
@@ -419,7 +479,7 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
             </>
           )}
           <p className="small text-muted mt-2">Lo que quede sin decidir se queda como «referencia ambigua» y se ignora: {conflictos.length} líneas ({conflictos.filter((i) => i.conflicto === "grupo").length} de tallas agrupadas sin resolver).</p>
-          <Navegar paso={paso} setPaso={setPaso} />
+          <Navegar paso={paso} setPaso={cambiarPaso} />
         </section>
       )}
 
@@ -429,7 +489,7 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
           <p className="small text-muted">Todo empieza en «Ignorar»: ningún precio cambia sin que lo marques.</p>
           <div className="nav nav-pills gx-pestanas flex-wrap gap-1 mb-2" role="tablist">
             {ESTADOS.map((e) => (
-              <button key={e} type="button" role="tab" aria-selected={pestana === e} className={`nav-link py-1 px-2 small ${pestana === e ? "active" : ""}`} onClick={() => setPestana(e)}>
+              <button key={e} type="button" role="tab" aria-selected={pestana === e} className={`nav-link py-1 px-2 small ${pestana === e ? "active" : ""}`} onClick={() => { setPestana(e); setPagina(1); }}>
                 {NOMBRE_ESTADO[e]} ({comparacion.resumen.porEstado[e]})
               </button>
             ))}
@@ -445,12 +505,12 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
             <table className="table table-sm mb-0 small">
               <thead><tr><th>Modelo</th><th>Color</th><th>Talla</th><th>Ahora</th><th>Tarifa</th><th className="text-end">Coste</th><th>Detalle</th><th>Decisión</th></tr></thead>
               <tbody>
-                {listaPestana.slice(0, MAX_FILAS).map((i) => (
+                {paginar(listaPestana, pagina).map((i) => (
                   <tr key={i.id}>
                     <td>{i.modelo}{i.referencia && <span className="text-muted"> · {i.referencia}</span>}</td>
                     <td>{i.color}</td><td>{i.talla}</td>
                     <td>{i.actual ? describirPrecio(i.actual) : "—"}</td>
-                    <td>{i.nuevo ? describirPrecio(i.nuevo) : i.importe ? euro5(i.importe) : "—"}</td>
+                    <td>{i.nuevo ? describirPrecio(i.nuevo) : i.importe ? euro5(i.importe) : "—"}{i.modalidadUsada && i.modalidadUsada !== opciones.modalidad && <span className="text-muted"> ({i.modalidadUsada})</span>}</td>
                     <td className="text-end">{i.costeActual !== undefined && i.costeNuevo !== undefined ? <>{euro5(i.costeActual)} → {euro5(i.costeNuevo)} <span className="text-muted">{pct(i.costeActual, i.costeNuevo)}</span></> : i.costeNuevo !== undefined ? euro5(i.costeNuevo) : ""}</td>
                     <td className="text-muted">{[i.motivo, i.desdeGrupo && `Grupo «${i.desdeGrupo}»`, i.archivada && "Variante archivada", i.filas?.length ? `Fila ${i.filas.join(", ")}` : null].filter(Boolean).join(" · ")}</td>
                     <td>
@@ -464,26 +524,37 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
               </tbody>
             </table>
           </div>
-          {listaPestana.length > MAX_FILAS && <p className="small text-muted mt-1">Se muestran {MAX_FILAS} de {listaPestana.length}; los botones de arriba se aplican a toda la lista.</p>}
+          <Paginacion total={listaPestana.length} pagina={pagina} onCambiar={setPagina} etiqueta="Páginas de la lista" />
+          <p className="small text-muted mt-1">Los botones de arriba se aplican a toda la lista filtrada, no solo a esta página.</p>
           {modelosSinTipo.length > 0 && (
             <div className="mt-3">
-              <h3 className="h6">Tipo de artículo de los modelos nuevos</h3>
+              <h3 className="h6">Tipo de artículo de los modelos nuevos ({modelosSinTipo.length})</h3>
+              <p className="small text-muted mb-2">La tarifa no indica el tipo. Puedes darlo a todos a la vez y corregirlo después en la ficha de cada modelo.</p>
+              <div className="d-flex flex-wrap gap-2 mb-2">
+                <input className="form-control form-control-sm w-auto" list="tipos-sugeridos" placeholder="Tipo para todos" aria-label="Tipo para todos los modelos nuevos sin tipo" value={tipoTodos} onChange={(e) => setTipoTodos(e.target.value)} />
+                <button type="button" className="btn btn-sm btn-outline-primary" disabled={!tipoTodos.trim()}
+                  onClick={() => setTipos((t) => ({ ...t, ...Object.fromEntries(modelosSinTipo.filter(([k]) => !t[k]?.trim()).map(([k]) => [k, tipoTodos.trim()])) }))}>
+                  Aplicar a los que no tienen tipo
+                </button>
+                <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => setTipoTodos("Sin clasificar")}>Sin clasificar</button>
+              </div>
               <datalist id="tipos-sugeridos">{TIPOS_SUGERIDOS.map((t) => <option key={t} value={t} />)}</datalist>
               <div className="row g-2">
-                {modelosSinTipo.map(([k, nombre]) => (
+                {paginar(modelosSinTipo, paginaTipos).map(([k, nombre]) => (
                   <div className="col-sm-6 col-lg-4" key={k}>
                     <label className="form-label small mb-0" htmlFor={`tipo-${k}`}>{nombre}</label>
                     <input id={`tipo-${k}`} className="form-control form-control-sm" list="tipos-sugeridos" value={tipos[k] ?? ""} onChange={(e) => setTipos((t) => ({ ...t, [k]: e.target.value }))} />
                   </div>
                 ))}
               </div>
+              <Paginacion total={modelosSinTipo.length} pagina={paginaTipos} onCambiar={setPaginaTipos} etiqueta="Páginas de modelos nuevos" />
             </div>
           )}
           <div className="form-check mt-3">
             <input className="form-check-input" type="checkbox" id="guardar-modalidades" checked={guardarModalidades} onChange={(e) => setGuardarModalidades(e.target.checked)} />
             <label className="form-check-label" htmlFor="guardar-modalidades">Guardar también las modalidades alternativas de las variantes con precio igual (no cambia su precio)</label>
           </div>
-          <Navegar paso={paso} setPaso={setPaso} />
+          <Navegar paso={paso} setPaso={cambiarPaso} />
         </section>
       )}
 
@@ -495,6 +566,8 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
             <li>{previsto.precios} precios actualizados ({previsto.subidas} suben, {previsto.bajadas} bajan)</li>
             <li>{previsto.archivadas} variantes archivadas</li>
             <li>{previsto.modalidades} variantes con modalidades alternativas guardadas</li>
+            {previsto.modelosCompletados > 0 && <li>{previsto.modelosCompletados} modelos existentes reciben la marca o la referencia que les faltaba (no se sobrescribe nada)</li>}
+            {Object.keys(previsto.porModalidad).length > 1 && <li>Precio según modalidad: {Object.entries(previsto.porModalidad).map(([m, n]) => `${m} ${n}`).join(" · ")}</li>}
           </ul>
           <p className="small">Precio usado en presupuestos: modalidad <strong>{lectura.formato.modalidades.find((m) => m.id === opciones.modalidad)?.nombre}</strong>, {INTERPRETACIONES[opciones.interpretacion].toLowerCase()}, IVA {ivaNum} %.</p>
           <Aviso tipo="info">No cambian: presupuestos guardados (conservan su precio), existencias, reservas ni movimientos de inventario.</Aviso>
@@ -509,17 +582,17 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
                 <table className="table table-sm mb-0 small" aria-label="Variantes que se crearán">
                   <thead><tr><th>Modelo</th><th>Color</th><th>Talla</th><th>Precio</th></tr></thead>
                   <tbody>
-                    {altas.filter((o) => !filtro || clave(`${o.modelo.nombre} ${o.color} ${o.talla}`).includes(clave(filtro))).slice(0, MAX_FILAS).map((o) => (
+                    {paginar(altasVista, pagina).map((o) => (
                       <tr key={`${o.modelo.nombre}|${o.color}|${o.talla}`}><td>{o.modelo.nombre}</td><td>{o.color}</td><td>{o.talla}</td><td>{describirPrecio(o.precio)}</td></tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              {altas.length > MAX_FILAS && <p className="small text-muted mt-1">Se muestran {MAX_FILAS} de {altas.length}; usa la búsqueda para ver el resto.</p>}
+              <Paginacion total={altasVista.length} pagina={pagina} onCambiar={setPagina} etiqueta="Páginas de variantes nuevas" />
             </>
           )}
           {errores.map((e) => <Aviso key={e} tipo="warning">{e}</Aviso>)}
-          <Navegar paso={paso} setPaso={setPaso} puedeSeguir={errores.length === 0 && operaciones.length > 0} />
+          <Navegar paso={paso} setPaso={cambiarPaso} puedeSeguir={errores.length === 0 && operaciones.length > 0} />
         </section>
       )}
 
@@ -529,8 +602,8 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase }) {
           <p>Proveedor <strong>{nombreProveedor}</strong> · archivo <strong>{archivo.nombre}</strong> · {operaciones.length} cambios.</p>
           <p className="small text-muted">Se guarda en una sola operación: o se aplica todo o nada. Queda registrado quién, cuándo, con qué archivo (huella) y cada precio anterior, para poder revisarlo o revertirlo.</p>
           <div className="d-flex gap-2">
-            <button type="button" className="btn btn-outline-secondary" onClick={() => setPaso(8)}>Atrás</button>
-            <button type="button" className="btn btn-primary" disabled={importando || errores.length > 0 || operaciones.length === 0} onClick={importar}>{importando ? "Aplicando…" : "Aplicar tarifa"}</button>
+            <button type="button" className="btn btn-outline-secondary" onClick={() => cambiarPaso(8)}>Atrás</button>
+            <button type="button" className="btn btn-primary" disabled={importando || errores.length > 0 || operaciones.length === 0} onClick={importar}>{importando ? `Aplicando lote ${Math.min(importando.lote + 1, importando.lotes)} de ${importando.lotes}…` : "Aplicar tarifa"}</button>
           </div>
         </section>
       )}

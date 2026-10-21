@@ -95,6 +95,14 @@ const mismasTarifas = (a = [], b = []) =>
   a.length === b.length &&
   [...a].sort((x, y) => x.modalidad.localeCompare(y.modalidad)).every((t, i) => t.modalidad === b[i].modalidad && r4(t.precio) === r4(b[i].precio) && (t.unidades ?? null) === (b[i].unidades ?? null));
 
+// Price mode giving a line its price: the chosen one, else the owner's alternative (if allowed)
+export const modalidadUsada = ({ precios, unidades }, { modalidad, alternativa }) => {
+  if (precios[modalidad] !== undefined) return modalidad;
+  if (!alternativa || precios[alternativa.modalidad] === undefined) return null;
+  if (alternativa.soloUnidad && unidades?.[alternativa.modalidad] !== 1) return null;
+  return alternativa.modalidad;
+};
+
 const avisosReferencia = (fuentes) => [...new Set(fuentes.flatMap((f) => f.problemas.filter((p) => /^Referencia/.test(p))))];
 
 const motivosBloqueo = (e) => {
@@ -112,7 +120,9 @@ const motivosBloqueo = (e) => {
  * @param {object[]} p.descartadas rows the format skipped (notes, prices on request)
  * @param {object[]} p.catalogo  v_catalogo_admin rows of THIS supplier
  * @param {Record<number, object[]>} [p.tarifasActuales] variante_id -> current price modes
- * @param {{ modalidad: string, interpretacion: "neto"|"iva_incluido", iva: number }} p.opciones
+ * @param {{ modalidad: string, interpretacion: "neto"|"iva_incluido", iva: number, alternativa?: { modalidad: string, soloUnidad?: boolean } }} p.opciones
+ *   alternativa: price mode used when a line has no price in `modalidad` (only for
+ *   packs of ONE unit when soloUnidad), chosen by the owner; never applied by default.
  * @param {{ equivalencias?: Record<string, number|"nuevo">, filaElegida?: Record<string, number>, tallasGrupo?: Record<string, string[]> }} [p.resoluciones]
  *   equivalencias: file model key -> existing modelo_id (same model) or "nuevo";
  *   filaElegida: line key -> Excel row whose price is the right one;
@@ -128,7 +138,7 @@ export const compararTarifa = ({ entradas, descartadas = [], catalogo, tarifasAc
   // ---- existing models of the supplier
   const modelos = new Map();
   for (const v of catalogo) {
-    if (!modelos.has(v.modelo_id)) modelos.set(v.modelo_id, { id: v.modelo_id, nombre: v.modelo, referencia: v.referencia ?? null, tipo: v.tipo, clave: clave(v.modelo), variantes: [] });
+    if (!modelos.has(v.modelo_id)) modelos.set(v.modelo_id, { id: v.modelo_id, nombre: v.modelo, referencia: v.referencia ?? null, marca: v.marca ?? null, tipo: v.tipo, clave: clave(v.modelo), variantes: [] });
     modelos.get(v.modelo_id).variantes.push(v);
   }
   const listaModelos = [...modelos.values()];
@@ -179,7 +189,7 @@ export const compararTarifa = ({ entradas, descartadas = [], catalogo, tarifasAc
         null;
       if (!modelo) candidato = listaModelos.find((m) => parecido(m.clave, fm.clave)) ?? null;
     }
-    const base = { modeloClave: fm.clave, modelo: modelo?.nombre ?? fm.nombre, modeloFichero: fm.nombre, referencia: fm.referencia, marca: fm.marca, tipo: modelo?.tipo ?? fm.tipo ?? null, genero: fm.genero, modeloId: modelo?.id ?? null };
+    const base = { modeloClave: fm.clave, modelo: modelo?.nombre ?? fm.nombre, modeloFichero: fm.nombre, referencia: fm.referencia, marca: fm.marca, tipo: modelo?.tipo ?? fm.tipo ?? null, genero: fm.genero, modeloId: modelo?.id ?? null, modeloActual: modelo ? { referencia: modelo.referencia, marca: modelo.marca } : null };
 
     for (const l of fm.lineas.values()) {
       // repeated colour/size: same prices -> one line; other prices -> the owner chooses the row
@@ -187,12 +197,14 @@ export const compararTarifa = ({ entradas, descartadas = [], catalogo, tarifasAc
       const elegida = distintas.length > 1 ? distintas.find((f) => f.fila === filaElegida[l.id]) : distintas[0];
       const fuente = elegida ?? distintas[0];
       const item = { ...base, id: l.id, color: l.color, talla: l.talla, filas: l.fuentes.map((f) => f.fila), precios: fuente.precios, unidades: fuente.unidades, tarifas: tarifasDe(fuente.precios, fuente.unidades), desdeGrupo: l.desdeGrupo };
-      const importe = fuente.precios[opciones.modalidad];
-      if (importe === undefined) {
-        items.push({ ...item, estado: "no_valida", motivo: `Sin precio «${opciones.modalidad}» en el archivo.${fuente.problemas.length ? " " + fuente.problemas.join(" ") : ""}` });
+      const usada = modalidadUsada(fuente, opciones);
+      if (!usada) {
+        items.push({ ...item, estado: "no_valida", motivo: `Sin precio «${opciones.modalidad}» en el archivo${opciones.alternativa ? ` ni alternativa «${opciones.alternativa.modalidad}» válida` : ""}.${fuente.problemas.length ? " " + fuente.problemas.join(" ") : ""}` });
         continue;
       }
+      const importe = fuente.precios[usada];
       item.importe = importe;
+      item.modalidadUsada = usada;
       item.nuevo = precioSegun(importe, opciones);
       item.costeNuevo = costeDe(item.nuevo);
       const existente = modelo?.variantes.find((v) => clave(v.color) === clave(l.color) && tallaCanonica(v.talla) === l.talla);
@@ -273,9 +285,20 @@ export const decisionesPosibles = (item) => {
  *   tipos: garment type for each NEW model (file model key -> tipo)
  * @returns {{ operaciones: object[], errores: string[] }}
  */
-export const construirOperaciones = (items, decisiones, { tipos = {}, guardarModalidades = true } = {}) => {
+export const construirOperaciones = (items, decisiones, { tipos = {}, guardarModalidades = true, completarModelos = true } = {}) => {
   const operaciones = [];
   const errores = [];
+  // existing models: fill an empty reference or brand with the file's (never overwrite)
+  if (completarModelos) {
+    const vistos = new Set();
+    for (const i of items) {
+      if (!i.modeloId || !i.modeloActual || vistos.has(i.modeloId) || i.conflicto === "modelo") continue;
+      vistos.add(i.modeloId);
+      const referencia = !i.modeloActual.referencia && i.referencia ? i.referencia : null;
+      const marca = !i.modeloActual.marca && i.marca ? i.marca : null;
+      if (referencia || marca) operaciones.push({ accion: "completar_modelo", modelo_id: i.modeloId, referencia, marca });
+    }
+  }
   for (const i of items) {
     const d = decisiones[i.id] ?? "ignorar";
     if (d === "ignorar") {
@@ -300,14 +323,15 @@ export const construirOperaciones = (items, decisiones, { tipos = {}, guardarMod
       }
       operaciones.push({
         accion: "alta",
-        modelo: { nombre: i.modelo, referencia: i.referencia ?? null, tipo, marca: i.marca ?? null },
+        modelo: { ...(i.modeloId ? { id: i.modeloId } : {}), nombre: i.modelo, referencia: i.referencia ?? null, tipo, marca: i.marca ?? null },
         color: i.color,
         talla: i.talla,
         precio: i.nuevo,
+        modalidad: i.modalidadUsada,
         tarifas: i.tarifas,
       });
     } else if (d === "actualizar") {
-      operaciones.push({ accion: "precio", variante_id: i.varianteId, precio: i.nuevo, tarifas: i.tarifas });
+      operaciones.push({ accion: "precio", variante_id: i.varianteId, precio: i.nuevo, modalidad: i.modalidadUsada, tarifas: i.tarifas });
     } else if (d === "archivar") {
       operaciones.push({ accion: "archivar", variante_id: i.varianteId });
     }
@@ -317,9 +341,10 @@ export const construirOperaciones = (items, decisiones, { tipos = {}, guardarMod
 
 /** Expected result of applying the operations (shown before confirming) */
 export const resultadoPrevisto = (operaciones, items) => {
-  const r = { altas: 0, modelosNuevos: new Set(), precios: 0, subidas: 0, bajadas: 0, archivadas: 0, modalidades: 0 };
+  const r = { altas: 0, modelosNuevos: new Set(), precios: 0, subidas: 0, bajadas: 0, archivadas: 0, modalidades: 0, modelosCompletados: 0, porModalidad: {} };
   const porVariante = new Map(items.filter((i) => i.varianteId).map((i) => [i.varianteId, i]));
   for (const o of operaciones) {
+    if (o.modalidad) r.porModalidad[o.modalidad] = (r.porModalidad[o.modalidad] ?? 0) + 1;
     if (o.accion === "alta") {
       r.altas++;
       if (!items.find((i) => i.modelo === o.modelo.nombre && i.modeloId)) r.modelosNuevos.add(o.modelo.nombre);
@@ -330,6 +355,7 @@ export const resultadoPrevisto = (operaciones, items) => {
       else if (i && i.costeNuevo < i.costeActual) r.bajadas++;
     } else if (o.accion === "archivar") r.archivadas++;
     else if (o.accion === "tarifas") r.modalidades++;
+    else if (o.accion === "completar_modelo") r.modelosCompletados++;
   }
   return { ...r, modelosNuevos: r.modelosNuevos.size };
 };
@@ -345,7 +371,7 @@ export const verificarImportacion = (operaciones, itemsDespues, catalogoDespues)
   let comprobadas = 0;
   const activa = new Map(catalogoDespues.map((v) => [v.variante_id, v.variante_activa]));
   for (const o of operaciones) {
-    if (o.accion === "tarifas") continue;
+    if (o.accion === "tarifas" || o.accion === "completar_modelo") continue;
     let ok;
     if (o.accion === "precio") ok = itemsDespues.some((i) => i.varianteId === o.variante_id && i.base === "igual");
     else if (o.accion === "alta")

@@ -4,6 +4,10 @@
 // the import (comparison, preview, saving) works for any supplier. A new
 // supplier only needs a new entry in FORMATOS.
 //
+// `propuesta` holds what the owner confirmed for THIS supplier's file (price
+// mode, net or VAT-included, VAT rate). It only pre-fills the wizard and stays
+// visible and editable; a format without it starts with nothing chosen.
+//
 // Entry: { fila, referencia, modelo, marca, genero, tipo, tallaTexto, tallas,
 //          grupo, colorTexto, colores, precios: { [modalidad]: number },
 //          unidades: { [modalidad]: number }, problemas: string[] }
@@ -78,6 +82,10 @@ const ROLY = {
     { id: "pack", nombre: "Pack", unidades: "ud/pack" },
     { id: "unidad", nombre: "Unidad" },
   ],
+  propuesta: {
+    modalidad: "unidad", interpretacion: "neto", iva: 21,
+    nota: "Confirmado por el propietario para la tarifa ROLY: precios sin IVA, IVA de compra 21 %. Unidad es la modalidad propuesta (coincide con los precios ya usados); Caja y Pack se guardan como alternativas.",
+  },
   detectar: (filas) =>
     buscarCabecera(filas, {
       ref: ["REF"], nombre: ["NOMBRE"], genero: ["GENERO"], talla: ["TALLA"], color: ["COLOR"],
@@ -163,6 +171,7 @@ const SOLS = {
   proveedor: "SOL'S",
   descripcion: "Tarifa SOL'S (Brand · Género · Ref · Nombre · Color · Talla · Tu Tarifa)",
   modalidades: [{ id: "tarifa", nombre: "Tarifa" }],
+  propuesta: { modalidad: "tarifa", interpretacion: "neto", iva: 21, nota: "Confirmado por el propietario para la tarifa SOL'S: precios sin IVA, IVA de compra 21 %." },
   detectar: (filas) =>
     buscarCabecera(filas, { marca: ["BRAND", "MARCA"], genero: ["GENERO"], ref: ["REF"], nombre: ["NOMBRE"], color: ["COLOR"], talla: ["TALLA"], precio: ["TU TARIFA", "TARIFA"] }),
   leer: (filas, { fila: cab, columnas: c }) => {

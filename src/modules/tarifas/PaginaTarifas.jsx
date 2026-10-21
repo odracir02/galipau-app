@@ -14,11 +14,11 @@ import { INTERPRETACIONES } from "./domain/comparar";
 import { listarImportacionesTarifa, listarProveedoresTarifa, obtenerImportacionTarifa, listarCambiosImportacion, revertirTarifa } from "./data/tarifasRepo";
 
 const fecha = (iso) => (iso ? new Date(iso).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" }) : "");
-const NOMBRE_ACCION = { alta_proveedor: "Proveedor nuevo", alta_modelo: "Modelo nuevo", alta_variante: "Variante nueva", precio: "Precio", archivar: "Archivada", tarifas: "Modalidades", referencia: "Referencia" };
+const NOMBRE_ACCION = { alta_proveedor: "Proveedor nuevo", alta_modelo: "Modelo nuevo", alta_variante: "Variante nueva", precio: "Precio", archivar: "Archivada", tarifas: "Modalidades", datos_modelo: "Marca / referencia" };
 const NOMBRE_REVERSION = {
   precios_restaurados: "precios restaurados", precios_conservados: "precios conservados (cambiados después)", variantes_borradas: "variantes nuevas retiradas",
   variantes_archivadas: "variantes archivadas (en uso)", reactivadas: "variantes reactivadas", tarifas_restauradas: "modalidades restauradas",
-  modelos_borrados: "modelos retirados", proveedores_borrados: "proveedores retirados", referencias_restauradas: "referencias restauradas",
+  modelos_borrados: "modelos retirados", proveedores_borrados: "proveedores retirados", datos_modelo_restaurados: "marcas o referencias vaciadas",
 };
 
 const Estado = ({ imp }) =>
@@ -78,9 +78,10 @@ export function PaginaTarifas({ obtenerCliente = obtenerClienteSupabase }) {
 }
 
 const describirCambio = (c) => {
+  if (c.accion === "precio" && c.despues?.modalidad) return `${describirPrecio(c.antes)} → ${describirPrecio(c.despues)} (${c.despues.modalidad})`;
   if (c.accion === "precio") return `${describirPrecio(c.antes)} → ${describirPrecio(c.despues)}`;
   if (c.accion === "tarifas") return `${(c.antes?.tarifas ?? []).length} → ${(c.despues?.tarifas ?? []).length} modalidades`;
-  if (c.accion === "referencia") return `${c.antes?.referencia ?? "—"} → ${c.despues?.referencia}`;
+  if (c.accion === "datos_modelo") return Object.entries(c.despues ?? {}).map(([k, v]) => `${k}: — → ${v}`).join(" · ");
   return "";
 };
 
@@ -109,6 +110,7 @@ export function PaginaImportacionTarifa({ obtenerCliente = obtenerClienteSupabas
     cargar();
   }, [cargar]);
 
+  const modelos = useMemo(() => Object.fromEntries(Object.values(variantes).map((v) => [v.modelo_id, v.modelo])), [variantes]);
   const porAccion = useMemo(() => cambios.reduce((a, c) => ((a[c.accion] = (a[c.accion] ?? 0) + 1), a), {}), [cambios]);
 
   const revertir = async () => {
@@ -163,7 +165,7 @@ export function PaginaImportacionTarifa({ obtenerCliente = obtenerClienteSupabas
                   return (
                     <tr key={c.id}>
                       <td>{NOMBRE_ACCION[c.accion] ?? c.accion}</td>
-                      <td>{v ? `${v.modelo} · ${v.color} · ${v.talla}` : c.variante_id ? `Variante ${c.variante_id} (ya no existe)` : c.modelo_id ? `Modelo ${c.modelo_id}` : c.proveedor_id ? `Proveedor ${c.proveedor_id}` : ""}</td>
+                      <td>{v ? `${v.modelo} · ${v.color} · ${v.talla}` : c.variante_id ? `Variante ${c.variante_id} (ya no existe)` : c.modelo_id ? (modelos[c.modelo_id] ?? `Modelo ${c.modelo_id}`) : c.proveedor_id ? `Proveedor ${c.proveedor_id}` : ""}</td>
                       <td>{describirCambio(c)}</td>
                     </tr>
                   );

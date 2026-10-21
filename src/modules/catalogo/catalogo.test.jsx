@@ -233,3 +233,53 @@ describe("interfaz del catálogo", () => {
     expect(sb.tablas.variantes).toHaveLength(4); // nothing deleted
   });
 });
+
+describe("catálogo grande: filtros por marca, tipo y modelo, y paginación", () => {
+  const fila = (n) => ({
+    variante_id: n, modelo_id: 1000 + Math.floor(n / 10), proveedor_id: 1, proveedor: "Proveedor Ficticio", propio: false, tipo: n % 2 ? "Sudadera" : "Camiseta",
+    modelo: `Modelo ${Math.floor(n / 10)}`, marca: n < 60 ? "Marca A" : "Marca B", color: n % 3 ? "Negro" : "Blanco", talla: ["S", "M", "L", "XL", "XXL"][n % 5],
+    precio_neto: 2, iva_porcentaje: 21, precio_compra: null, coste_cent: 242, coste: 2.42, variante_activa: true, disponible: true,
+  });
+  const sb = () => crearClienteFalso({ tablas: { v_catalogo_admin: Array.from({ length: 120 }, (_, n) => fila(n)) } });
+
+  it("pagina de 50 en 50 y filtra combinando marca, tipo, modelo y búsqueda", async () => {
+    const user = userEvent.setup();
+    pagina(sb(), "/catalogo");
+    const filas = async () => [...(await screen.findByRole("table")).querySelectorAll("tbody tr")];
+    expect(await filas()).toHaveLength(50);
+    expect(screen.getByText("1–50 de 120")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Página siguiente" }));
+    await user.click(screen.getByRole("button", { name: "Página siguiente" }));
+    expect(await filas()).toHaveLength(20);
+    await user.selectOptions(screen.getByLabelText("Marca"), "Marca B");
+    expect(await filas()).toHaveLength(50); // filtering goes back to page 1
+    expect(screen.getByText("1–50 de 60")).toBeTruthy();
+    await user.selectOptions(screen.getByLabelText("Tipo"), "Sudadera");
+    expect(await filas()).toHaveLength(30);
+    expect([...screen.getByLabelText("Modelo").options].map((o) => o.value)).toHaveLength(7); // "Todos" + models of Marca B
+    await user.selectOptions(screen.getByLabelText("Modelo"), "Modelo 7");
+    expect((await filas()).map((f) => f.textContent).every((t) => /Modelo 7.*Sudadera.*Marca B/.test(t))).toBe(true);
+    await user.type(screen.getByLabelText("Buscar"), "xxl");
+    await waitFor(async () => expect(await filas()).toHaveLength(1));
+  });
+});
+
+describe("ficha del modelo: modalidad y tarifas alternativas", () => {
+  it("muestra de qué modalidad sale el precio y las alternativas guardadas", async () => {
+    const sb = crearClienteFalso({
+      tablas: {
+        proveedores: [{ id: 1, nombre: "Proveedor Ficticio", activo: true }],
+        modelos: [{ id: 10, proveedor_id: 1, tipo: "Camiseta", nombre: "Base", marca: "Marca A", referencia: "B-1", activo: true }],
+        variantes: [{
+          id: 100, modelo_id: 10, color: "Negro", talla: "M", coste_cent: 160, precio_neto: 1.32, iva_porcentaje: 21, precio_compra: null, activo: true, modalidad: "unidad",
+          variantes_tarifas: [{ modalidad: "caja", precio: "1.1000", unidades: 50 }, { modalidad: "pack", precio: "1.1550", unidades: 5 }, { modalidad: "unidad", precio: "1.3200", unidades: null }],
+        }],
+      },
+    });
+    pagina(sb, "/catalogo/modelos/10");
+    const fila = (await screen.findByRole("table")).querySelector("tbody tr");
+    expect(fila.textContent).toMatch(/1,32\s€ \+ 21 % IVA · unidad/);
+    expect(fila.textContent).toMatch(/Alternativas: caja 1,10\s€ \(×50\) · pack 1,155\s€ \(×5\)/);
+    expect(screen.getByText(/Camiseta · Marca A · Proveedor Ficticio · Ref\. B-1/)).toBeTruthy();
+  });
+});
