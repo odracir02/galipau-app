@@ -14,7 +14,7 @@ import { esClaveSecreta } from "../../src/shared/supabase/config.js";
 export const TABLAS = [
   "clientes", "configuracion", "contadores", "importaciones", "modelos", "parametros_calculo",
   "presupuestos", "propietario", "proveedores", "registro_copias", "variantes", "v_catalogo_plano", "v_catalogo_admin",
-  "stock_articulos", "stock_movimientos", "stock_reservas", "stock_necesidades", "v_stock", "v_stock_compras",
+  "stock_articulos", "stock_movimientos", "stock_reservas", "stock_necesidades", "v_stock", "v_stock_compras", "variantes_tarifas", "importaciones_cambios",
 ];
 
 // Called with arguments that would fail anyway: they must be rejected before running
@@ -25,6 +25,8 @@ export const FUNCIONES = {
   importar_historial: { p_registros: [] },
   importar_catalogo: { p_filas: [] },
   revertir_importacion: { p_id: -1 },
+  importar_tarifa: { p_meta: {}, p_operaciones: [] },
+  revertir_tarifa: { p_importacion_id: -1 },
   transicion_presupuesto_permitida: { p_desde: "x", p_hasta: "y" },
 };
 

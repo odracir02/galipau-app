@@ -360,3 +360,10 @@ a:hover { text-decoration: underline; }
 .gx-banda-flotante { position: fixed; left: 0; right: 0; top: 0; }
 [data-entorno="pruebas"] .gx-lateral { border-top: 6px solid #f0a400; }
 [data-entorno="pruebas"] .gx-superior { top: 34px; }
+
+/* Wizard steps and tabs (price-list import) */
+.gx-pasos li { font-weight: 600; padding: 0.3rem 0.6rem; border-radius: 999px; border: 1px solid var(--gx-borde); color: var(--gx-texto-suave); background: var(--gx-superficie); }
+.gx-pasos li.hecho { background: var(--gx-primario-suave); color: var(--gx-primario); border-color: transparent; }
+.gx-pasos li[aria-current="step"] { background: var(--gx-primario); color: var(--gx-primario-texto); border-color: var(--gx-primario); }
+.gx-pestanas .nav-link { color: var(--gx-texto-suave); }
+.gx-pestanas .nav-link.active { background: var(--gx-primario); color: var(--gx-primario-texto); }

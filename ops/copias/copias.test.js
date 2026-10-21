@@ -35,7 +35,7 @@ describe("manifiesto de la base de datos", () => {
     const db = await crearBd();
     await cargarDatos(db);
     const m = await manifiestoDe(db);
-    expect(Object.keys(m).sort()).toEqual(["clientes", "configuracion", "contadores", "importaciones", "modelos", "parametros_calculo", "presupuestos", "propietario", "proveedores", "registro_copias", "stock_articulos", "stock_movimientos", "stock_necesidades", "stock_reservas", "variantes"]);
+    expect(Object.keys(m).sort()).toEqual(["clientes", "configuracion", "contadores", "importaciones", "importaciones_cambios", "modelos", "parametros_calculo", "presupuestos", "propietario", "proveedores", "registro_copias", "stock_articulos", "stock_movimientos", "stock_necesidades", "stock_reservas", "variantes", "variantes_tarifas"]);
     expect(m.variantes.filas).toBe(36);
     expect(m.presupuestos.md5).toMatch(/^[0-9a-f]{32}$/);
     await db.close();

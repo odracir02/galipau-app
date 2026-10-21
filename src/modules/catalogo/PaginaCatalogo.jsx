@@ -13,9 +13,10 @@ import EstadoVacio from "../../shared/ui/EstadoVacio";
 export function NavCatalogo() {
   const clase = ({ isActive }) => `btn btn-sm ${isActive ? "btn-primary" : "btn-outline-secondary"}`;
   return (
-    <nav className="d-flex gap-2 mb-3" aria-label="Secciones del catálogo">
+    <nav className="d-flex flex-wrap gap-2 mb-3" aria-label="Secciones del catálogo">
       <NavLink end to="/catalogo" className={clase}>Productos</NavLink>
       <NavLink to="/catalogo/proveedores" className={clase}>Proveedores y productos propios</NavLink>
+      <NavLink to="/catalogo/tarifas" className={clase}>Tarifas de proveedores</NavLink>
     </nav>
   );
 }
