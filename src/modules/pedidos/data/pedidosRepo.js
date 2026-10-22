@@ -19,10 +19,10 @@ export const obtenerPedido = async (sb, id) => {
   return { pedido: desenvolver(pedido), lineas: desenvolver(lineas) ?? [], eventos: desenvolver(eventos) ?? [], material: desenvolver(material) ?? [] };
 };
 
-// The active (not cancelled) order of a quote, if any; null when orders are not available yet
+// The active (not cancelled) order of a quote, or null; undefined when the database has no orders yet
 export const pedidoDePresupuesto = async (sb, presupuestoId) => {
   const r = await sb.from("pedidos").select("id, numero, estado").eq("presupuesto_id", presupuestoId).neq("estado", "cancelado").maybeSingle();
-  return r.error ? null : r.data;
+  return r.error ? undefined : r.data;
 };
 
 const rpc = async (sb, nombre, args) => desenvolver(await sb.rpc(nombre, args), MENSAJES);

@@ -68,3 +68,13 @@ describe("vista previa de la conversión", () => {
     ]);
   });
 });
+
+describe("compatibilidad con una base sin pedidos", () => {
+  it("sin el módulo de pedidos en la base, el presupuesto no ofrece crear pedido (undefined), y con él sí (null)", async () => {
+    const { crearClienteFalso } = await import("../../../shared/supabase/clienteFalso");
+    const { pedidoDePresupuesto } = await import("../data/pedidosRepo");
+    const sinModulo = crearClienteFalso({ fallos: { pedidos: { code: "PGRST205", message: "Could not find the table" } } });
+    expect(await pedidoDePresupuesto(sinModulo, 1)).toBeUndefined();
+    expect(await pedidoDePresupuesto(crearClienteFalso({ tablas: { pedidos: [] } }), 1)).toBeNull();
+  });
+});

@@ -111,7 +111,7 @@ function PaginaEditorPresupuesto({ obtenerCliente = obtenerClienteSupabase, carg
   useEffect(() => {
     if (!sb || !registro?.id || !PRESUPUESTO_CONVERTIBLE.has(registro.estado)) return;
     let vigente = true;
-    pedidoDePresupuesto(sb, registro.id).then((p) => vigente && setPedido(p ?? null));
+    pedidoDePresupuesto(sb, registro.id).then((p) => vigente && setPedido(p)); // undefined: no orders module yet, nothing offered
     return () => {
       vigente = false;
     };
