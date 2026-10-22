@@ -68,13 +68,13 @@ function PaginaNecesidades({ obtenerCliente = obtenerClienteSupabase }) {
           <h2 className="h6 px-3 pt-3">{g.proveedor}</h2>
           <div className="table-responsive">
             <table className="table align-middle mb-0">
-              <thead><tr><th>Prenda</th><th className="text-end">Por comprar</th><th className="text-end">Pedidas, sin llegar</th><th className="d-none d-md-table-cell">Para</th><th /></tr></thead>
+              <thead><tr><th>Prenda</th><th className="gx-num">Por comprar</th><th className="gx-num">Pedidas, sin llegar</th><th className="d-none d-md-table-cell">Para</th><th /></tr></thead>
               <tbody>
                 {g.prendas.map((x) => (
                   <tr key={x.variante_id}>
                     <td>{x.descripcion}{x.marca && <span className="text-muted small"> · {x.marca}</span>}</td>
-                    <td className="text-end fw-semibold">{x.comprar || "—"}</td>
-                    <td className="text-end">{x.recibir || "—"}</td>
+                    <td className="gx-num fw-semibold">{x.comprar || "—"}</td>
+                    <td className="gx-num">{x.recibir || "—"}</td>
                     <td className="d-none d-md-table-cell small">{x.pedidos.map((n) => <Link key={n.id} to={`/pedidos/${n.pedido_id}`} className="me-2">{n.numero} ({n.cantidad})</Link>)}</td>
                     <td className="text-end">{x.comprar > 0 && <button type="button" className="btn btn-sm btn-outline-primary" disabled={ocupado} onClick={() => marcarPedidas(x)}>Ya pedidas</button>}</td>
                   </tr>

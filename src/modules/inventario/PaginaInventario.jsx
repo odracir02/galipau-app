@@ -81,7 +81,7 @@ function PaginaInventario({ obtenerCliente = obtenerClienteSupabase }) {
             <div className="gx-tabla">
               <div className="table-responsive">
                 <table className="table table-hover align-middle">
-                  <thead><tr><th>Artículo</th><th>Color</th><th>Talla</th><th className="text-end">Físico</th><th className="text-end">Reservado</th><th className="text-end">Disponible</th><th className="text-end d-none d-md-table-cell">Mínimo</th></tr></thead>
+                  <thead><tr><th>Artículo</th><th>Color</th><th>Talla</th><th className="gx-num">Físico</th><th className="gx-num">Reservado</th><th className="gx-num">Disponible</th><th className="gx-num d-none d-md-table-cell">Mínimo</th></tr></thead>
                   <tbody>
                     {visibles.map((f) => (
                       <tr key={f.articulo_id}>
@@ -91,13 +91,13 @@ function PaginaInventario({ obtenerCliente = obtenerClienteSupabase }) {
                         </td>
                         <td>{f.color}</td>
                         <td>{f.talla}</td>
-                        <td className="text-end">{f.fisico}</td>
-                        <td className="text-end">{f.reservado || "—"}</td>
-                        <td className="text-end fw-semibold">
+                        <td className="gx-num">{f.fisico}</td>
+                        <td className="gx-num">{f.reservado || "—"}</td>
+                        <td className="gx-num fw-semibold">
                           {f.disponible}
                           {f.bajo_minimo && <span className="gx-insignia gx-estado-cancelado ms-2">Bajo mínimo</span>}
                         </td>
-                        <td className="text-end d-none d-md-table-cell">{f.stock_minimo || "—"}</td>
+                        <td className="gx-num d-none d-md-table-cell">{f.stock_minimo || "—"}</td>
                       </tr>
                     ))}
                   </tbody>

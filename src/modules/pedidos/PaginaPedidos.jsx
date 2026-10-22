@@ -105,7 +105,7 @@ function PaginaPedidos({ obtenerCliente = obtenerClienteSupabase, hoy = hoyIso()
         <div className="gx-tabla">
           <div className="table-responsive">
             <table className="table table-hover align-middle mb-0">
-              <thead><tr><th>Pedido</th><th>Cliente</th><th>Entrega</th><th>Estado</th><th className="d-none d-md-table-cell">Prendas</th><th className="d-none d-lg-table-cell">Cobro</th><th className="d-none d-lg-table-cell text-end">Precio</th></tr></thead>
+              <thead><tr><th>Pedido</th><th>Cliente</th><th>Entrega</th><th>Estado</th><th className="d-none d-md-table-cell gx-num">Prendas</th><th className="d-none d-lg-table-cell">Cobro</th><th className="d-none d-lg-table-cell text-end">Precio</th></tr></thead>
               <tbody>
                 {paginar(visibles, pagina).map((p) => (
                   <tr key={p.id}>
@@ -113,7 +113,7 @@ function PaginaPedidos({ obtenerCliente = obtenerClienteSupabase, hoy = hoyIso()
                     <td>{p.cliente_nombre}{p.motivos.length > 0 && <div className="small text-warning-emphasis">{p.motivos.join(" · ")}</div>}</td>
                     <td className="text-nowrap">{fecha(p.fecha_entrega)}<div className="small text-muted">{textoEntrega(p.fecha_entrega, hoy)}</div></td>
                     <td><InsigniaPedido estado={p.estado} /></td>
-                    <td className="d-none d-md-table-cell small">{p.unidades ? `${p.unidades_cubiertas} de ${p.unidades} listas` : "—"}{p.unidades_faltan > 0 && <div className="text-warning-emphasis">faltan {p.unidades_faltan}</div>}</td>
+                    <td className="d-none d-md-table-cell small gx-num">{p.unidades ? `${p.unidades_cubiertas} de ${p.unidades} listas` : "—"}{p.unidades_faltan > 0 && <div className="text-warning-emphasis">faltan {p.unidades_faltan}</div>}</td>
                     <td className="d-none d-lg-table-cell"><InsigniaCobro estado={p.cobro_estado} /></td>
                     <td className="d-none d-lg-table-cell text-end">{euros(p.precio_acordado_cent)}</td>
                   </tr>

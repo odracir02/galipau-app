@@ -254,7 +254,7 @@ function PaginaClasificar({ obtenerCliente = obtenerClienteSupabase }) {
             <thead>
               <tr>
                 <th style={{ width: "2.5rem" }}><span className="visually-hidden">Seleccionar</span></th>
-                <th>Modelo</th><th className="d-none d-md-table-cell">Proveedor</th><th className="d-none d-lg-table-cell">Marca</th><th>Categoría</th><th>Sugerencia</th><th className="d-none d-md-table-cell text-end">Variantes</th>
+                <th>Modelo</th><th className="d-none d-md-table-cell">Proveedor</th><th className="d-none d-lg-table-cell">Marca</th><th>Categoría</th><th>Sugerencia</th><th className="d-none d-md-table-cell gx-num">Variantes</th>
               </tr>
             </thead>
             <tbody>
@@ -283,7 +283,7 @@ function PaginaClasificar({ obtenerCliente = obtenerClienteSupabase }) {
                         </>
                       ) : <span className="text-muted">—</span>}
                     </td>
-                    <td className="d-none d-md-table-cell text-end">{m.variantes}</td>
+                    <td className="d-none d-md-table-cell gx-num">{m.variantes}</td>
                   </tr>
                 );
               })}

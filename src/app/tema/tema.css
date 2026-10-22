@@ -370,3 +370,13 @@ a:hover { text-decoration: underline; }
 /* Orders waiting for garments: amber-red, distinct from "in production" */
 .gx-estado-material { color: #b45309; background: rgba(180, 83, 9, 0.1); }
 [data-bs-theme="dark"] .gx-estado-material { color: #fdba74; background: rgba(253, 186, 116, 0.13); }
+
+/* Quantity columns (units, counts): centred under their header, digits of equal width.
+   Money stays right-aligned (text-end) so amounts line up by their decimals. */
+.gx-num { text-align: center; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.table th.gx-num { text-align: center; white-space: normal; } /* long headers may take two lines; numbers never break */
+/* A cell listing several short facts (e.g. "20 por comprar" + action): one per line */
+.gx-celda-lista { display: flex; flex-direction: column; align-items: flex-start; gap: 0.2rem; line-height: 1.25; white-space: nowrap; }
+.gx-celda-lista .btn-link { font-size: inherit; text-align: left; }
+/* First column naming the item: keeps a readable width next to quantity columns */
+.gx-col-nombre { min-width: 9rem; }

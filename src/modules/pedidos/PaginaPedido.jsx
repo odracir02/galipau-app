@@ -162,22 +162,27 @@ function PaginaPedido({ obtenerCliente = obtenerClienteSupabase }) {
               {material.length > 0 && (
                 <div className="table-responsive">
                   <table className="table table-sm align-middle mb-0">
-                    <thead><tr><th>Prenda</th><th className="text-end">Necesarias</th><th className="text-end">Reserv.</th><th className="text-end d-none d-sm-table-cell">Usadas</th><th className="text-end">Faltan</th><th className="text-end d-none d-md-table-cell">Libres en almacén</th><th className="d-none d-md-table-cell">Compra</th></tr></thead>
+                    <thead><tr><th className="gx-col-nombre">Prenda</th><th className="gx-num">Necesarias</th><th className="gx-num"><span className="d-none d-sm-inline">Reservadas</span><span className="d-sm-none">Reserv.</span></th><th className="gx-num d-none d-sm-table-cell">Usadas</th><th className="gx-num">Faltan</th><th className="gx-num d-none d-md-table-cell">Libres en almacén</th><th className="d-none d-md-table-cell">Compra</th></tr></thead>
                     <tbody>
                       {material.map((m) => (
                         <tr key={m.variante_id}>
                           <td>{m.modelo} · {m.color} {m.talla}{m.merma > 0 && <div className="small text-muted">{m.merma} estropeadas</div>}</td>
-                          <td className="text-end">{m.necesario}</td>
-                          <td className="text-end">{m.reservado}</td>
-                          <td className="text-end d-none d-sm-table-cell">{m.usado}</td>
-                          <td className={`text-end ${m.falta > 0 ? "fw-semibold text-warning-emphasis" : ""}`}>{m.falta}</td>
-                          <td className="text-end d-none d-md-table-cell">{m.disponible_almacen}</td>
+                          <td className="gx-num">{m.necesario}</td>
+                          <td className="gx-num">{m.reservado}</td>
+                          <td className="gx-num d-none d-sm-table-cell">{m.usado}</td>
+                          <td className={`gx-num ${m.falta > 0 ? "fw-semibold text-warning-emphasis" : ""}`}>{m.falta}</td>
+                          <td className="gx-num d-none d-md-table-cell">{m.disponible_almacen}</td>
                           <td className="d-none d-md-table-cell small">
-                            {m.pendiente_comprar > 0 && (
-                              <>{m.pendiente_comprar} por comprar <button type="button" className="btn btn-link btn-sm p-0" disabled={ocupado}
-                                onClick={() => ejecutar((sb) => estadoNecesidad(sb, p.id, m.variante_id, "pedida"), "Marcado como pedido al proveedor.")}>ya pedidas</button></>
+                            {m.pendiente_comprar === 0 && m.pendiente_recibir === 0 ? <span className="text-muted">—</span> : (
+                              <div className="gx-celda-lista">
+                                {m.pendiente_comprar > 0 && <span><strong>{m.pendiente_comprar}</strong> por comprar</span>}
+                                {m.pendiente_comprar > 0 && (
+                                  <button type="button" className="btn btn-link btn-sm p-0" disabled={ocupado}
+                                    onClick={() => ejecutar((sb) => estadoNecesidad(sb, p.id, m.variante_id, "pedida"), "Marcado como pedido al proveedor.")} title="Marcar estas prendas como ya pedidas al proveedor">Ya pedidas</button>
+                                )}
+                                {m.pendiente_recibir > 0 && <span><strong>{m.pendiente_recibir}</strong> pedidas, sin llegar</span>}
+                              </div>
                             )}
-                            {m.pendiente_recibir > 0 && <>{m.pendiente_recibir} pedidas, sin llegar</>}
                           </td>
                         </tr>
                       ))}

@@ -65,15 +65,15 @@ function PaginaCompras({ obtenerCliente = obtenerClienteSupabase, cargarProducto
         <div className="gx-tabla mb-3">
           <div className="table-responsive">
             <table className="table table-hover align-middle">
-              <thead><tr><th>Artículo</th><th className="text-end">Disponible</th><th className="text-end">Mínimo</th><th className="text-end">Necesidades</th><th className="text-end">Sugerido</th><th className="text-end d-none d-md-table-cell">Coste estimado</th></tr></thead>
+              <thead><tr><th>Artículo</th><th className="gx-num">Disponible</th><th className="gx-num">Mínimo</th><th className="gx-num">Necesidades</th><th className="gx-num">Sugerido</th><th className="text-end d-none d-md-table-cell">Coste estimado</th></tr></thead>
               <tbody>
                 {compras.map((c) => (
                   <tr key={c.variante_id}>
                     <td>{c.modelo} · {c.color} · {c.talla}<div className="small text-muted">{c.propio ? "Producto propio" : c.proveedor}</div></td>
-                    <td className="text-end">{c.disponible}</td>
-                    <td className="text-end">{c.stock_minimo || "—"}</td>
-                    <td className="text-end">{Number(c.necesidades) || "—"}{Number(c.pendiente_recibir) > 0 && <div className="small text-muted">{c.pendiente_recibir} pedidas, sin llegar</div>}</td>
-                    <td className="text-end fw-semibold" data-testid={`sugerido-${c.variante_id}`}>{c.sugerido}</td>
+                    <td className="gx-num">{c.disponible}</td>
+                    <td className="gx-num">{c.stock_minimo || "—"}</td>
+                    <td className="gx-num">{Number(c.necesidades) || "—"}{Number(c.pendiente_recibir) > 0 && <div className="small text-muted">{c.pendiente_recibir} pedidas, sin llegar</div>}</td>
+                    <td className="gx-num fw-semibold" data-testid={`sugerido-${c.variante_id}`}>{c.sugerido}</td>
                     <td className="text-end d-none d-md-table-cell">{euro5(Number(c.sugerido) * Number(c.coste_catalogo ?? 0))}</td>
                   </tr>
                 ))}

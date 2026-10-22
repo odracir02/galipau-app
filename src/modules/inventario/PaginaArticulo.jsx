@@ -149,13 +149,13 @@ function PaginaArticulo({ obtenerCliente = obtenerClienteSupabase }) {
         <div className="gx-tabla">
           <div className="table-responsive">
             <table className="table table-sm align-middle">
-              <thead><tr><th>Fecha</th><th>Tipo</th><th className="text-end">Cantidad</th><th className="d-none d-md-table-cell">Coste ud.</th><th>Motivo / referencia</th><th /></tr></thead>
+              <thead><tr><th>Fecha</th><th>Tipo</th><th className="gx-num">Cantidad</th><th className="d-none d-md-table-cell">Coste ud.</th><th>Motivo / referencia</th><th /></tr></thead>
               <tbody>
                 {movimientos.map((m) => [
                   <tr key={m.id} className={corregidos.has(m.id) ? "text-muted text-decoration-line-through" : ""}>
                     <td className="small">{m.fecha}</td>
                     <td>{TIPOS_MOVIMIENTO[m.tipo]}</td>
-                    <td className={`text-end fw-semibold ${m.cantidad > 0 ? "gx-positivo" : "gx-negativo"}`}>{m.cantidad > 0 ? `+${m.cantidad}` : m.cantidad}</td>
+                    <td className={`gx-num fw-semibold ${m.cantidad > 0 ? "gx-positivo" : "gx-negativo"}`}>{m.cantidad > 0 ? `+${m.cantidad}` : m.cantidad}</td>
                     <td className="d-none d-md-table-cell small">{m.coste_unitario === null ? "" : euro5(m.coste_unitario)}</td>
                     <td className="small">{[m.motivo, m.referencia].filter(Boolean).join(" · ")}{m.corrige_movimiento_id ? ` (corrige el nº ${m.corrige_movimiento_id})` : ""}</td>
                     <td className="text-end">

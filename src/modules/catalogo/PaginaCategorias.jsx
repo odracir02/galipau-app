@@ -93,7 +93,7 @@ function PaginaCategorias({ obtenerCliente = obtenerClienteSupabase }) {
       <div className="gx-tabla">
         <div className="table-responsive">
           <table className="table align-middle mb-0">
-            <thead><tr><th>Orden</th><th>Categoría</th><th className="text-end">Modelos</th><th>Acciones</th></tr></thead>
+            <thead><tr><th>Orden</th><th>Categoría</th><th className="gx-num">Modelos</th><th>Acciones</th></tr></thead>
             <tbody>
               {categorias.map((c, i) => {
                 const enUso = usos[c.nombre] ?? 0;
@@ -115,7 +115,7 @@ function PaginaCategorias({ obtenerCliente = obtenerClienteSupabase }) {
                         </form>
                       ) : c.nombre}
                     </td>
-                    <td className="text-end">{enUso}</td>
+                    <td className="gx-num">{enUso}</td>
                     <td>
                       <div className="d-flex flex-wrap gap-1">
                       {c.nombre !== SIN_CLASIFICAR && editando?.id !== c.id && (
