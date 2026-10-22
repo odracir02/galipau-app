@@ -14,7 +14,7 @@ import { pedidoDePresupuesto } from "../pedidos/data/pedidosRepo";
 import { PRESUPUESTO_CONVERTIBLE, ESTADOS_PEDIDO } from "../pedidos/domain/pedidos";
 import { construirRegistro, estadoDesdeRegistro, estadoDuplicado, formularioVacio, datosDocumentoIniciales, reproducir, sinPrecioGuardado } from "./domain/instantanea";
 import { ESTADOS, accionesDesde, esEditable, requierePrecioFinal } from "./domain/estados";
-import { IDIOMAS } from "./domain/documento";
+import { IDIOMAS, resumenDocumento, resumenNotas } from "./domain/documento";
 import { descargarPdfPresupuesto } from "./descargarPdf";
 import { euros, eurosDecimal } from "../../shared/utils/dinero";
 import InsigniaEstado from "./InsigniaEstado";
@@ -52,6 +52,9 @@ function PaginaEditorPresupuesto({ obtenerCliente = obtenerClienteSupabase, carg
   const [ocupado, setOcupado] = useState(false);
   const [mensaje, setMensaje] = useState(null);
   const [pedido, setPedido] = useState(undefined); // the quote's active order (null: none)
+  // Secondary details folded by default (each shows a one-line summary)
+  const [abierto, setAbierto] = useState({ estados: false, desglose: false, documento: false, notas: false });
+  const alternar = (clave) => setAbierto((a) => ({ ...a, [clave]: !a[clave] }));
 
   const cargar = useCallback(async () => {
     setCargado(false);
@@ -260,6 +263,17 @@ function PaginaEditorPresupuesto({ obtenerCliente = obtenerClienteSupabase, carg
   const usarPreciosActuales = () =>
     cambiarFormulario((f) => ({ ...f, lineas: f.lineas.map(sinPrecioGuardado) }));
 
+  // Moving forward stays in sight; corrections and cancelling go under "Más opciones".
+  // An unsaved quote cannot be cancelled: there is nothing to cancel yet.
+  const acciones = accionesDesde(estado).filter((a) => registro || a.hasta !== "cancelado");
+  const avance = acciones.filter((a) => a.tipo === "avance");
+  const otras = acciones.filter((a) => a.tipo !== "avance");
+  const enlaceAlternar = (clave, texto, etiqueta) => (
+    <button type="button" className="btn btn-link btn-sm p-0 text-nowrap" aria-expanded={abierto[clave]} aria-label={etiqueta} onClick={() => alternar(clave)}>
+      {abierto[clave] ? "Ocultar" : texto}
+    </button>
+  );
+
   const mostrarAvisos = formulario.lineas.some((l) => l.quantity !== "" || l.proveedor !== "" || l.precioManual !== "");
   const titulo = registro?.numero ? `Presupuesto ${registro.numero}` : registro ? "Presupuesto (borrador)" : "Nuevo presupuesto";
 
@@ -299,11 +313,19 @@ function PaginaEditorPresupuesto({ obtenerCliente = obtenerClienteSupabase, carg
           <Link to={`/pedidos/nuevo?presupuesto=${registro.id}`} className="btn btn-success btn-sm">Crear pedido</Link>
         </div>
       )}
-      {!pedido && (registro || estado === "borrador") && accionesDesde(estado).length > 0 && (
-        <div className="d-flex flex-wrap gap-2 mb-3" aria-label="Cambiar estado">
-          {accionesDesde(estado).map((a) => (
+      {!pedido && (registro || estado === "borrador") && acciones.length > 0 && (
+        <div className="d-flex flex-wrap align-items-center gap-2 mb-3" aria-label="Cambiar estado">
+          {avance.map((a) => (
+            <button key={a.hasta} type="button" disabled={ocupado} className="btn btn-sm btn-success" onClick={() => avanzar(a.hasta)}>{a.etiqueta}</button>
+          ))}
+          {otras.length > 0 && (
+            <button type="button" className="btn btn-link btn-sm" aria-expanded={abierto.estados} onClick={() => alternar("estados")}>
+              {abierto.estados ? "Menos opciones" : "Más opciones"}
+            </button>
+          )}
+          {abierto.estados && otras.map((a) => (
             <button key={a.hasta} type="button" disabled={ocupado}
-              className={`btn btn-sm ${a.tipo === "avance" ? "btn-success" : a.tipo === "peligro" ? "btn-outline-danger" : "btn-outline-secondary"}`}
+              className={`btn btn-sm ${a.tipo === "peligro" ? "btn-outline-danger" : "btn-outline-secondary"}`}
               onClick={() => avanzar(a.hasta)}>
               {a.etiqueta}
             </button>
@@ -338,14 +360,19 @@ function PaginaEditorPresupuesto({ obtenerCliente = obtenerClienteSupabase, carg
             </div>
           )}
           <FormularioTrabajo formulario={formulario} onChange={cambiarFormulario} productos={productos} detalle={calculo.detalle}
-            soloLectura={!editable} conDescripcion etiquetaPrecioFinal="Precio final para el cliente (€)"
+            soloLectura={!editable} conDescripcion extrasPlegables etiquetaPrecioFinal="Precio final para el cliente (€)"
             recomendadoCent={calculo.resultado?.precio.recomendadoCent ?? null} />
           {mostrarAvisos && (calculo.problemas.length > 0 || calculo.erroresEntrada.length > 0) && (
             <div className="alert alert-warning small" role="alert">
               <ul className="mb-0">{[...new Set([...calculo.problemas, ...calculo.erroresEntrada])].map((p) => <li key={p}>{p}</li>)}</ul>
             </div>
           )}
-          {calculo.resultado && <DesgloseCostes resultado={calculo.resultado} />}
+          {calculo.resultado && (
+            <div className="mt-2">
+              {enlaceAlternar("desglose", "Ver el desglose del coste", abierto.desglose ? "Ocultar el desglose del coste" : "Ver el desglose del coste")}
+              {abierto.desglose && <DesgloseCostes resultado={calculo.resultado} />}
+            </div>
+          )}
           {comprobacion && !sucio && (
             <p className={`small ${comprobacion.coincide ? "text-success" : "text-danger"}`} data-testid="comprobacion">
               {comprobacion.coincide
@@ -358,60 +385,77 @@ function PaginaEditorPresupuesto({ obtenerCliente = obtenerClienteSupabase, carg
         </div>
       </section>
 
-      <section className="card mb-3">
+      <section className="card mb-3" aria-label="Documento para el cliente">
         <div className="card-body">
-          <h4 className="h5">Documento para el cliente</h4>
-          <fieldset disabled={!editable} className="row g-2">
-            <div className="col-md-3">
-              <label className="form-label small mb-0" htmlFor="idioma">Idioma del PDF</label>
-              <select id="idioma" className="form-select form-select-sm" value={documento.idioma} onChange={cambiarDocumento("idioma")}>
-                {Object.entries(IDIOMAS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
+          <div className="d-flex flex-wrap align-items-baseline justify-content-between gap-2">
+            <h4 className="gx-tarjeta-titulo mb-0">Documento para el cliente</h4>
+            {enlaceAlternar("documento", editable ? "Cambiar" : "Ver", abierto.documento ? "Ocultar el documento para el cliente" : `${editable ? "Cambiar" : "Ver"} el documento para el cliente`)}
+          </div>
+          {!abierto.documento && <p className="small text-muted mb-0 mt-1" data-testid="resumen-documento">{resumenDocumento(documento, empresa)}</p>}
+          {abierto.documento && (
+            <div className="mt-2">
+              <fieldset disabled={!editable} className="row g-2">
+                <div className="col-md-3">
+                  <label className="form-label small mb-0" htmlFor="idioma">Idioma del PDF</label>
+                  <select id="idioma" className="form-select form-select-sm" value={documento.idioma} onChange={cambiarDocumento("idioma")}>
+                    {Object.entries(IDIOMAS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </div>
+                <div className="col-md-3">
+                  <label className="form-label small mb-0" htmlFor="fechaEmision">Fecha</label>
+                  <input id="fechaEmision" type="date" className="form-control form-control-sm" value={documento.fechaEmision} onChange={cambiarDocumento("fechaEmision")} />
+                </div>
+                <div className="col-md-3">
+                  <label className="form-label small mb-0" htmlFor="validoHasta">Válido hasta (opcional)</label>
+                  <input id="validoHasta" type="date" className="form-control form-control-sm" value={documento.validoHasta} onChange={cambiarDocumento("validoHasta")} />
+                </div>
+                <div className="col-12">
+                  <label className="form-label small mb-0" htmlFor="observaciones">Observaciones (aparecen en el PDF)</label>
+                  <textarea id="observaciones" rows={2} className="form-control form-control-sm" value={documento.observaciones} onChange={cambiarDocumento("observaciones")} />
+                </div>
+                <div className="col-12">
+                  <label className="form-label small mb-0" htmlFor="condiciones">Condiciones comerciales (una por línea, aparecen en el PDF)</label>
+                  <textarea id="condiciones" rows={4} className="form-control form-control-sm" value={documento.condiciones} onChange={cambiarDocumento("condiciones")} />
+                  {empresa?.condiciones?.[documento.idioma] && (
+                    <button type="button" className="btn btn-link btn-sm p-0"
+                      onClick={() => modificar(setDocumento)((d) => ({ ...d, condiciones: empresa.condiciones[d.idioma].join("\n") }))}>
+                      Poner las condiciones por defecto en {IDIOMAS[documento.idioma].toLowerCase()}
+                    </button>
+                  )}
+                </div>
+              </fieldset>
+              <div className="form-text">El PDF muestra los productos, las cantidades y el total. Nunca incluye costes, márgenes, beneficios ni notas internas.</div>
             </div>
-            <div className="col-md-3">
-              <label className="form-label small mb-0" htmlFor="fechaEmision">Fecha</label>
-              <input id="fechaEmision" type="date" className="form-control form-control-sm" value={documento.fechaEmision} onChange={cambiarDocumento("fechaEmision")} />
-            </div>
-            <div className="col-md-3">
-              <label className="form-label small mb-0" htmlFor="validoHasta">Válido hasta (opcional)</label>
-              <input id="validoHasta" type="date" className="form-control form-control-sm" value={documento.validoHasta} onChange={cambiarDocumento("validoHasta")} />
-            </div>
-            <div className="col-12">
-              <label className="form-label small mb-0" htmlFor="observaciones">Observaciones (aparecen en el PDF)</label>
-              <textarea id="observaciones" rows={2} className="form-control form-control-sm" value={documento.observaciones} onChange={cambiarDocumento("observaciones")} />
-            </div>
-            <div className="col-12">
-              <label className="form-label small mb-0" htmlFor="condiciones">Condiciones comerciales (una por línea, aparecen en el PDF)</label>
-              <textarea id="condiciones" rows={4} className="form-control form-control-sm" value={documento.condiciones} onChange={cambiarDocumento("condiciones")} />
-              {empresa?.condiciones?.[documento.idioma] && (
-                <button type="button" className="btn btn-link btn-sm p-0"
-                  onClick={() => modificar(setDocumento)((d) => ({ ...d, condiciones: empresa.condiciones[d.idioma].join("\n") }))}>
-                  Poner las condiciones por defecto en {IDIOMAS[documento.idioma].toLowerCase()}
-                </button>
-              )}
-            </div>
-          </fieldset>
-          <div className="form-text">El PDF muestra los productos, las cantidades y el total. Nunca incluye costes, márgenes, beneficios ni notas internas.</div>
+          )}
         </div>
       </section>
 
-      <section className="card mb-3">
+      <section className="card mb-3" aria-label="Notas internas">
         <div className="card-body">
-          <label className="form-label h5" htmlFor="notas">Notas internas</label>
-          <textarea id="notas" rows={2} className="form-control form-control-sm" value={documento.notas} onChange={cambiarDocumento("notas")} />
-          {!editable && registro && (
-            <button type="button" className="btn btn-sm btn-outline-primary mt-2" disabled={ocupado || !sucio}
-              onClick={async () => {
-                try {
-                  setRegistro(await actualizarPresupuesto(sb, registro.id, { notas: documento.notas.trim() || null }));
-                  setSucio(false);
-                  setMensaje({ tipo: "success", texto: "Notas guardadas." });
-                } catch (e) {
-                  setMensaje({ tipo: "danger", texto: e.message });
-                }
-              }}>
-              Guardar notas
-            </button>
+          <div className="d-flex flex-wrap align-items-baseline justify-content-between gap-2">
+            <h4 className="gx-tarjeta-titulo mb-0">Notas internas</h4>
+            {enlaceAlternar("notas", documento.notas ? "Ver o cambiar" : "Añadir", abierto.notas ? "Ocultar las notas internas" : documento.notas ? "Ver o cambiar las notas internas" : "Añadir notas internas")}
+          </div>
+          {!abierto.notas && <p className="small text-muted mb-0 mt-1" data-testid="resumen-notas">{resumenNotas(documento.notas)}</p>}
+          {abierto.notas && (
+            <div className="mt-2">
+              <label className="visually-hidden" htmlFor="notas">Notas internas</label>
+              <textarea id="notas" rows={2} className="form-control form-control-sm" value={documento.notas} onChange={cambiarDocumento("notas")} />
+              {!editable && registro && (
+                <button type="button" className="btn btn-sm btn-outline-primary mt-2" disabled={ocupado || !sucio}
+                  onClick={async () => {
+                    try {
+                      setRegistro(await actualizarPresupuesto(sb, registro.id, { notas: documento.notas.trim() || null }));
+                      setSucio(false);
+                      setMensaje({ tipo: "success", texto: "Notas guardadas." });
+                    } catch (e) {
+                      setMensaje({ tipo: "danger", texto: e.message });
+                    }
+                  }}>
+                  Guardar notas
+                </button>
+              )}
+            </div>
           )}
         </div>
       </section>

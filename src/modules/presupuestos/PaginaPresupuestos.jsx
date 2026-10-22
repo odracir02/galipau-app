@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
-import { FilePlus2, FileText } from "lucide-react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Copy, Download, FilePlus2, FileText } from "lucide-react";
 import Cabecera from "../../shared/ui/Cabecera";
 import Cargando from "../../shared/ui/Cargando";
 import Aviso from "../../shared/ui/Aviso";
@@ -19,6 +19,7 @@ const fecha = (iso) => (iso ? iso.split("-").reverse().join("/") : "");
 /** Quote history with filters by customer, date and state. */
 function PaginaPresupuestos({ obtenerCliente = obtenerClienteSupabase, guardarPdf }) {
   const [busqueda] = useSearchParams();
+  const navigate = useNavigate();
   const [filtros, setFiltros] = useState(() => ({ ...FILTROS_INICIALES, cliente: busqueda.get("cliente") ?? "" }));
   const [presupuestos, setPresupuestos] = useState(null);
   const [error, setError] = useState(null);
@@ -108,18 +109,30 @@ function PaginaPresupuestos({ obtenerCliente = obtenerClienteSupabase, guardarPd
             </thead>
             <tbody>
               {presupuestos.map((p) => (
-                <tr key={p.id}>
-                  <td className="fw-semibold">{p.numero ?? <span className="text-muted fw-normal">Borrador</span>}</td>
+                // The whole row opens the quote; the number is the keyboard-accessible link
+                <tr key={p.id} className="gx-fila-enlace" onClick={() => navigate(`/presupuestos/${p.id}`)}>
+                  <td className="fw-semibold">
+                    <Link to={`/presupuestos/${p.id}`} className="text-reset text-decoration-none" onClick={(e) => e.stopPropagation()}>
+                      {p.numero ?? <span className="text-muted fw-normal">Borrador</span>}
+                    </Link>
+                  </td>
                   <td className="d-none d-sm-table-cell">{fecha(p.fecha_emision)}</td>
                   <td>{p.cliente_nombre}<div className="d-sm-none mt-1"><InsigniaEstado estado={p.estado} /></div></td>
                   <td className="d-none d-sm-table-cell"><InsigniaEstado estado={p.estado} /></td>
                   <td className="text-end">{euros(Number(p.total_cent))}{p.precio_final_cent === null && p.estado !== "importado" ? <span className="text-muted small"> (rec.)</span> : ""}</td>
                   <td className={`text-end d-none d-md-table-cell ${Number(p.beneficio_cent) < 0 ? "text-danger" : ""}`}>{p.beneficio_cent === null ? "—" : euros(Number(p.beneficio_cent))}</td>
-                  <td className="text-end text-nowrap">
-                    <Link className="btn btn-sm btn-outline-primary" to={`/presupuestos/${p.id}`}>Abrir</Link>{" "}
-                    {p.estado !== "importado" && <Link className="btn btn-sm btn-outline-secondary" to={`/presupuestos/nuevo?duplicar=${p.id}`}>Duplicar</Link>}{" "}
-                    {p.estado !== "importado" && p.estado !== "cancelado" && p.precio_final_cent !== null && (
-                      <button type="button" className="btn btn-sm btn-outline-dark" onClick={() => pdf(p.id)}>PDF</button>
+                  <td className="text-end text-nowrap" onClick={(e) => e.stopPropagation()}>
+                    {p.estado !== "importado" && p.estado !== "cancelado" && p.precio_final_cent !== null ? (
+                      <button type="button" className="btn btn-sm btn-link text-body px-2" onClick={() => pdf(p.id)} aria-label={`Descargar PDF de ${p.numero ?? "borrador"}`} title="Descargar PDF">
+                        <Download size={16} aria-hidden="true" />
+                      </button>
+                    ) : (
+                      <span className="btn btn-sm px-2 invisible" aria-hidden="true"><Download size={16} /></span> // keeps the icons aligned
+                    )}
+                    {p.estado !== "importado" && (
+                      <Link className="btn btn-sm btn-link text-body px-2" to={`/presupuestos/nuevo?duplicar=${p.id}`} aria-label="Duplicar" title="Duplicar">
+                        <Copy size={16} aria-hidden="true" />
+                      </Link>
                     )}
                   </td>
                 </tr>

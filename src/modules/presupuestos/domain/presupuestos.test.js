@@ -4,7 +4,7 @@ import { ESTADOS, TRANSICIONES, accionesDesde, esEditable, esTransicionPermitida
 import {
   construirRegistro, estadoDesdeRegistro, estadoDuplicado, reproducir, datosDocumentoIniciales, instantaneaCliente, formularioVacio,
 } from "./instantanea";
-import { construirDocumento, ErrorDocumento, CONDICIONES_POR_DEFECTO } from "./documento";
+import { construirDocumento, ErrorDocumento, CONDICIONES_POR_DEFECTO, resumenDocumento, resumenNotas } from "./documento";
 import { generarPdf } from "./pdf";
 import { calcularFicticio, formularioFicticio, registroFicticio, CLIENTE_FICTICIO, CATALOGO_FICTICIO, DOCUMENTO_FICTICIO } from "./fixtures";
 import { PARAMETROS_EJEMPLO } from "../../../domain/calculo/serigrafia/parametros";
@@ -214,5 +214,24 @@ describe("PDF", () => {
     const pdf = await generarPdf(construirDocumento(r, EMPRESA), { comprimir: false });
     expect(pdf.getNumberOfPages()).toBeGreaterThan(1);
     expect(new TextDecoder("latin1").decode(pdf.output("arraybuffer"))).toContain("Prenda 40");
+  });
+});
+
+describe("resúmenes del editor", () => {
+  const empresa = { condiciones: { va: ["Pagament: 50 %", "Recollida al taller"], es: ["Pago: 50 %"] } };
+  const doc = (cambios) => ({ idioma: "va", fechaEmision: "2026-10-22", validoHasta: "2026-11-21", observaciones: "", condiciones: "Pagament: 50 %\nRecollida al taller", notas: "", ...cambios });
+
+  it("resume el documento: idioma, fechas, observaciones y si las condiciones son las de siempre", () => {
+    expect(resumenDocumento(doc(), empresa)).toBe("Valencià · fecha 22/10/2026 · válido hasta 21/11/2026 · sin observaciones · condiciones por defecto");
+    expect(resumenDocumento(doc({ idioma: "es" }), empresa)).toMatch(/Castellano .* 2 condiciones propias$/);
+    expect(resumenDocumento(doc({ validoHasta: "", condiciones: " ", observaciones: "Entrega urgente antes del viernes para el torneo del club" }), empresa))
+      .toBe("Valencià · fecha 22/10/2026 · sin fecha de validez · observaciones: «Entrega urgente antes del viernes para…» · sin condiciones");
+    expect(resumenDocumento(doc(), null)).toMatch(/2 condiciones propias$/);
+  });
+
+  it("resume las notas internas en una línea", () => {
+    expect(resumenNotas("")).toMatch(/^Sin notas/);
+    expect(resumenNotas("Primera\nSegunda")).toBe("Primera Segunda");
+    expect(resumenNotas("x".repeat(120))).toHaveLength(90);
   });
 });

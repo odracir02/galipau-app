@@ -160,3 +160,30 @@ export const construirDocumento = (p, empresa = {}) => {
     nombreArchivo: `${t.archivo}_${(numero ?? t.borrador).replace(/[/\\]/g, "-")}_${nombreEmpresa.replace(/[^A-Za-z0-9]+/g, "_")}.pdf`,
   };
 };
+
+// One-line summaries shown while the document settings and the internal notes are folded
+const fechaCorta = (iso) => (iso ? iso.split("-").reverse().join("/") : "");
+const recortar = (texto, max) => (texto.length > max ? `${texto.slice(0, max - 1).trimEnd()}…` : texto);
+const lineasDe = (texto) => String(texto ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
+
+export const resumenDocumento = (documento, empresa) => {
+  const condiciones = lineasDe(documento.condiciones);
+  const porDefecto = empresa?.condiciones?.[documento.idioma] ?? [];
+  const observaciones = lineasDe(documento.observaciones).join(" ");
+  return [
+    IDIOMAS[documento.idioma] ?? documento.idioma,
+    documento.fechaEmision && `fecha ${fechaCorta(documento.fechaEmision)}`,
+    documento.validoHasta ? `válido hasta ${fechaCorta(documento.validoHasta)}` : "sin fecha de validez",
+    observaciones ? `observaciones: «${recortar(observaciones, 40)}»` : "sin observaciones",
+    condiciones.length === 0
+      ? "sin condiciones"
+      : condiciones.join("\n") === porDefecto.map((l) => l.trim()).filter(Boolean).join("\n")
+        ? "condiciones por defecto"
+        : `${condiciones.length} ${condiciones.length === 1 ? "condición propia" : "condiciones propias"}`,
+  ].filter(Boolean).join(" · ");
+};
+
+export const resumenNotas = (notas) => {
+  const lineas = lineasDe(notas);
+  return lineas.length ? recortar(lineas.join(" "), 90) : "Sin notas. Solo las ves tú: nunca salen en el PDF.";
+};

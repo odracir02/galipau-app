@@ -114,6 +114,7 @@ describe("editor de presupuestos", () => {
     expect(tablas.presupuestos[0].estado).toBe("aceptado");
     expect(screen.getByLabelText("Precio final para el cliente (€)").matches(":disabled")).toBe(true);
     expect(screen.queryByRole("button", { name: /Guardar (borrador|cambios)/ })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Ver o cambiar las notas internas" }));
     expect(screen.getByRole("button", { name: "Guardar notas" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Marcar como cobrado" })).toBeNull();
     expect(screen.getByRole("button", { name: "Pasar a producción" })).toBeTruthy();
@@ -221,10 +222,83 @@ describe("editor de presupuestos", () => {
     await waitFor(() => expect(guardarPdf).toHaveBeenCalledTimes(1));
     expect(guardarPdf.mock.calls[0][1]).toBe("Pressupost_2026-003_Galipau_Arts.pdf");
     expect(guardarPdf.mock.calls[0][0].getNumberOfPages()).toBe(1);
+    await user.click(screen.getByRole("button", { name: "Cambiar el documento para el cliente" }));
     await user.type(screen.getByLabelText("Observaciones (aparecen en el PDF)"), " y negro");
     await user.click(screen.getByRole("button", { name: "Descargar PDF" }));
     expect(screen.getByText("Guarda los cambios antes de generar el PDF.")).toBeTruthy();
     expect(guardarPdf).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("editor sencillo: lo secundario plegado, nada perdido", () => {
+  it("un presupuesto nuevo no ofrece cancelarlo, pero sí presentarlo directamente", async () => {
+    const { sb } = crearBd();
+    renderEditor(sb);
+    expect(await screen.findByRole("button", { name: "Marcar como presentado" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Cancelar presupuesto" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Más opciones" })).toBeNull();
+  });
+
+  it("un presupuesto guardado deja cancelar o corregir desde «Más opciones», con confirmación", async () => {
+    const user = userEvent.setup();
+    const { sb, tablas } = crearBd({ presupuestos: [registroFicticio()], parametros: [fila(3)] });
+    const confirmar = vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderEditor(sb, "/presupuestos/1");
+    expect(await screen.findByRole("button", { name: "Marcar como aceptado" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Cancelar presupuesto" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Más opciones" }));
+    expect(screen.getByRole("button", { name: /Corregir: volver a «borrador»/ })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Cancelar presupuesto" }));
+    expect(confirmar).toHaveBeenCalledTimes(1);
+    expect(tablas.presupuestos[0].estado).toBe("presentado");
+    confirmar.mockRestore();
+  });
+
+  it("el desglose del coste se abre a demanda", async () => {
+    const user = userEvent.setup();
+    const { sb } = crearBd({ presupuestos: [registroFicticio()], parametros: [fila(3)] });
+    renderEditor(sb, "/presupuestos/1");
+    await user.click(await screen.findByRole("button", { name: "Ver el desglose del coste" }));
+    expect(screen.getByRole("region", { name: "Desglose del coste" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Ocultar el desglose del coste" }));
+    expect(screen.queryByRole("region", { name: "Desglose del coste" })).toBeNull();
+  });
+
+  it("el documento y las notas muestran un resumen y se abren para cambiarlos", async () => {
+    const user = userEvent.setup();
+    const { sb, tablas } = crearBd({ presupuestos: [registroFicticio({ numero: null, estado: "borrador" })], parametros: [fila(3)] });
+    renderEditor(sb, "/presupuestos/1");
+    expect((await screen.findByTestId("resumen-documento")).textContent).toMatch(/Valencià · fecha .* · observaciones: «Logo en blanc» · 1 condición propia/);
+    expect(screen.getByTestId("resumen-notas").textContent).toBe("Nota interna: cliente de confianza");
+    expect(screen.queryByLabelText("Idioma del PDF")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Cambiar el documento para el cliente" }));
+    await user.selectOptions(screen.getByLabelText("Idioma del PDF"), "es");
+    await user.click(screen.getByRole("button", { name: "Ver o cambiar las notas internas" }));
+    await user.type(screen.getByRole("textbox", { name: "Notas internas" }), ". Paga al contado");
+    await user.click(screen.getByRole("button", { name: "Guardar cambios" }));
+    await screen.findByText("Presupuesto guardado.");
+    expect(tablas.presupuestos[0]).toMatchObject({ idioma: "es", notas: "Nota interna: cliente de confianza. Paga al contado" });
+  });
+
+  it("el precio manual y el texto para el cliente de cada línea se abren con un enlace y se guardan", async () => {
+    const user = userEvent.setup();
+    const { sb, tablas } = crearBd();
+    renderEditor(sb);
+    await elegirCliente(user);
+    await rellenarTrabajo(user);
+    expect(screen.queryByLabelText("Texto para el cliente (opcional)")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Precio manual o texto para el cliente de la línea 1" }));
+    await user.type(screen.getByLabelText("Texto para el cliente (opcional)"), "Camiseta con logo");
+    await user.click(screen.getByRole("button", { name: "Guardar borrador" }));
+    await screen.findByText("Presupuesto guardado.");
+    expect(tablas.presupuestos[0].entrada.lineas[0].descripcion).toBe("Camiseta con logo");
+  });
+
+  it("un presupuesto no editable muestra los datos de las líneas que los tienen, sin enlaces para abrir", async () => {
+    const { sb } = crearBd({ presupuestos: [registroFicticio({ estado: "aceptado" })], parametros: [fila(3)] });
+    renderEditor(sb, "/presupuestos/1");
+    expect(await screen.findByRole("button", { name: "Ver el documento para el cliente" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Precio manual o texto para el cliente/ })).toBeNull();
   });
 });
 
@@ -253,6 +327,22 @@ describe("historial de presupuestos", () => {
     await user.type(screen.getByLabelText("Desde"), "2026-09-15");
     await waitFor(async () => expect((await filas()).length).toBe(2));
     expect(screen.getAllByRole("link", { name: "Duplicar" })[0].getAttribute("href")).toMatch(/duplicar=/);
+  });
+
+  it("toda la fila abre el presupuesto; duplicar no la abre", async () => {
+    const user = userEvent.setup();
+    const { sb } = crearBd({ presupuestos: [p(1, { numero: "2026/001", estado: "presentado" })] });
+    render(
+      <MemoryRouter initialEntries={["/presupuestos"]}>
+        <Routes>
+          <Route path="/presupuestos" element={<PaginaPresupuestos obtenerCliente={async () => sb} />} />
+          <Route path="/presupuestos/:id" element={<div>Editor abierto</div>} />
+          <Route path="/presupuestos/nuevo" element={<div>Copia nueva</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+    await user.click(await screen.findByText("Club Ficticio"));
+    expect(screen.getByText("Editor abierto")).toBeTruthy();
   });
 });
 

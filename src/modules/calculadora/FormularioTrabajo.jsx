@@ -18,13 +18,18 @@ const CAMPOS_LIBRES = new Set(["precioManual", "descripcion", "quantity"]);
  * final price), shared by the cost calculator and the quote editor.
  * `formulario` is { lineas, zonas, minutosDiseno, mermaPorcentaje, precioFinal };
  * `onChange(fn)` receives an updater function.
+ * `extrasPlegables` (quote editor) folds each line's optional manual price and
+ * customer text behind a link; they stay open while they have a value.
  */
 function FormularioTrabajo({
   formulario, onChange, productos, detalle = [], soloLectura = false, conDescripcion = false,
-  etiquetaPrecioFinal = "Precio final cobrado (€, opcional)", recomendadoCent = null,
+  etiquetaPrecioFinal = "Precio final cobrado (€, opcional)", recomendadoCent = null, extrasPlegables = false,
 }) {
   const { lineas, zonas, minutosDiseno, mermaPorcentaje, precioFinal } = formulario;
   const [busqueda, setBusqueda] = useState("");
+  const [extrasAbiertos, setExtrasAbiertos] = useState(() => new Set());
+  // Without a catalogue the manual price is the only way to price a line: never folded
+  const extrasVisibles = (l) => !extrasPlegables || productos.length === 0 || extrasAbiertos.has(l.id) || Boolean(l.precioManual) || Boolean(l.descripcion);
   const cambiar = (campo, valor) => onChange((f) => ({ ...f, [campo]: valor }));
 
   const cambiarLinea = (id, campo, valor) =>
@@ -69,6 +74,35 @@ function FormularioTrabajo({
               onCantidad={(valor) => cambiarLinea(l.id, "quantity", valor)}
               onRemove={() => onChange((f) => ({ ...f, lineas: f.lineas.filter((x) => x.id !== l.id) }))}
             />
+            {extrasPlegables ? (
+              <div className="row g-2 align-items-end">
+                {extrasVisibles(l) ? (
+                  <>
+                    <div className="col-sm-4 col-lg-3">
+                      <label className="form-label small mb-0" htmlFor={`manual-${l.id}`}>Precio manual de la prenda (opcional, €)</label>
+                      <input id={`manual-${l.id}`} className="form-control form-control-sm" inputMode="decimal"
+                        value={l.precioManual ?? ""} onChange={(e) => cambiarLinea(l.id, "precioManual", e.target.value)} placeholder="del catálogo" />
+                    </div>
+                    {conDescripcion && (
+                      <div className="col-sm-8 col-lg-9">
+                        <label className="form-label small mb-0" htmlFor={`descripcion-${l.id}`}>Texto para el cliente (opcional)</label>
+                        <input id={`descripcion-${l.id}`} className="form-control form-control-sm" value={l.descripcion ?? ""}
+                          onChange={(e) => cambiarLinea(l.id, "descripcion", e.target.value)} placeholder={[l.tipo, l.proveedor, l.modelo].filter(Boolean).join(" ")} />
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  !soloLectura && (
+                    <div className="col-12">
+                      <button type="button" className="btn btn-link btn-sm p-0" aria-label={`Precio manual o texto para el cliente de la línea ${i + 1}`}
+                        onClick={() => setExtrasAbiertos((a) => new Set(a).add(l.id))}>
+                        Precio manual o texto para el cliente
+                      </button>
+                    </div>
+                  )
+                )}
+              </div>
+            ) : (
             <div className="row g-2 align-items-center">
               <div className="col-auto"><label className="form-label small mb-0" htmlFor={`manual-${l.id}`}>Precio manual de la prenda (opcional, €)</label></div>
               <div className="col-auto">
@@ -84,13 +118,14 @@ function FormularioTrabajo({
                   </div>
                 </>
               )}
-              {costeLinea !== null && (
-                <div className="col-12 small text-muted" data-testid={`coste-linea-${i + 1}`}>
-                  Coste de prendas de la línea: {d.cantidad} × {precioUnidad(d.precioUnitario)} = <strong>{eurosDecimal(costeLinea)}</strong>
-                  {d.origen === "manual" ? " (precio manual)" : d.origen === "guardado" ? " (precio guardado en el presupuesto)" : ""}
-                </div>
-              )}
             </div>
+            )}
+            {costeLinea !== null && (
+              <div className="small text-muted mt-1" data-testid={`coste-linea-${i + 1}`}>
+                Coste de prendas de la línea: {d.cantidad} × {precioUnidad(d.precioUnitario)} = <strong>{eurosDecimal(costeLinea)}</strong>
+                {d.origen === "manual" ? " (precio manual)" : d.origen === "guardado" ? " (precio guardado en el presupuesto)" : ""}
+              </div>
+            )}
           </div>
         );
       })}

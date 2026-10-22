@@ -92,7 +92,9 @@ describe("de la calculadora a un presupuesto nuevo", () => {
     // Every field arrived
     expect(["Proveedor", "Modelo", "Color", "Talla", "Cantidad"].map((c) => linea(1).getByLabelText(c).value)).toEqual(["Demo", "Básica", "Negro", "M", "10"]);
     expect(["Proveedor", "Modelo", "Color", "Talla", "Cantidad"].map((c) => linea(2).getByLabelText(c).value)).toEqual(["Demo", "Básica", "Negro", "L", "5"]);
-    expect(screen.getAllByLabelText("Precio manual de la prenda (opcional, €)").map((i) => i.value)).toEqual(["", "4,10"]);
+    // The manual price stays in sight on the line that has one; the other line keeps it folded
+    expect(screen.getAllByLabelText("Precio manual de la prenda (opcional, €)").map((i) => i.value)).toEqual(["4,10"]);
+    expect(screen.getByRole("button", { name: "Precio manual o texto para el cliente de la línea 1" })).toBeTruthy();
     expect(screen.getByTestId("coste-linea-1").textContent).toMatch(/10 × 3,00\s€/);
     expect(screen.getByTestId("coste-linea-2").textContent).toMatch(/5 × 4,10\s€.*precio manual/);
     expect(["Delantera", "Trasera", "Zona 3"].map((z) => screen.getByLabelText(`Colores ${z}`).value)).toEqual(["2", "1", "1"]);
