@@ -288,3 +288,113 @@ describe("seguridad", () => {
     expect(await codigoError(() => comoPropietario(db, (tx) => tx.query("select public.pedido_evento($1, 'datos', 'x')", [id])))).toBe("42501");
   });
 });
+
+describe("terminar con consumo automático de lo reservado", () => {
+  const preparar = (tx, id) => tx.query("select public.pedido_preparar_terminar($1) r", [id]).then((r) => r.rows[0].r);
+  const terminar = (tx, id, esperado) => tx.query("select public.pedido_terminar($1, $2::jsonb) r", [id, JSON.stringify(esperado)]).then((r) => r.rows[0].r);
+  const enProduccion = async (tx, id) => {
+    await estado(tx, id, "listo_produccion");
+    await estado(tx, id, "en_produccion");
+  };
+  const salidas = (tx, id) => tx.query("select count(*)::int n, coalesce(sum(cantidad), 0)::int c from public.stock_movimientos where pedido_id = $1", [id]).then((r) => r.rows[0]);
+  const resumen = (plan) => plan.consumos.map((c) => [c.variante_id, c.cantidad]);
+  const soloM = (tx, id) => tx.query("select public.pedido_actualizar_lineas($1, $2::jsonb)", [id, JSON.stringify([{ variante_id: F.v1, descripcion: "Base · NEGRO M", cantidad: 6 }])]);
+
+  it("si faltan prendas no descuenta nada ni lo da por terminado; resuelto, descuenta solo lo pendiente y termina a la vez", async () => {
+    await comoPropietario(db, async (tx) => {
+      const id = await convertir(tx);
+      await reservar(tx, id, [{ variante_id: F.v1, cantidad: 6 }, { variante_id: F.v2, cantidad: 3 }], true);
+      await enProduccion(tx, id);
+      const plan = await preparar(tx, id);
+      expect(plan).toMatchObject({ permitido: true, sin_catalogo: [{ descripcion: "Delantal del cliente", cantidad: 2 }] });
+      expect(plan.incidencias).toEqual([expect.objectContaining({ variante_id: F.v2, tipo: "faltan", cantidad: 2 })]);
+      await tx.query("savepoint s");
+      await expect(terminar(tx, id, plan.consumos)).rejects.toThrow(/faltan 2 por reservar/);
+      await tx.query("rollback to savepoint s");
+      expect((await pedido(tx, id)).estado).toBe("en_produccion");
+      expect(await stock(tx, F.v1)).toEqual({ fisico: 10, reservado: 6 }); // nothing discounted
+      // the 2 missing L arrive and are reserved
+      await tx.query("select public.stock_registrar($1, 'entrada', 2, null, 'Albarán ficticio', 3)", [F.v2]);
+      await reservar(tx, id, [{ variante_id: F.v2, cantidad: 2 }]);
+      const listo = await preparar(tx, id);
+      expect(listo.incidencias).toEqual([]);
+      expect(resumen(listo)).toEqual([[F.v1, 6], [F.v2, 5]]);
+      expect(await terminar(tx, id, listo.consumos)).toMatchObject({ consumidas: 11 });
+      expect((await pedido(tx, id)).estado).toBe("terminado");
+      expect(await stock(tx, F.v1)).toEqual({ fisico: 4, reservado: 0 });
+      expect(await stock(tx, F.v2)).toEqual({ fisico: 0, reservado: 0 });
+      expect((await material(tx, id)).map((m) => [m.talla, m.usado, m.reservado, m.falta])).toEqual([["M", 6, 0, 0], ["L", 5, 0, 0]]);
+      expect((await quote(tx)).estado).toBe("finalizado");
+      const movs = (await tx.query("select tipo, cantidad, reserva_id is not null enlazada, motivo from public.stock_movimientos where pedido_id = $1 order by id", [id])).rows;
+      expect(movs).toEqual([
+        { tipo: "salida", cantidad: -6, enlazada: true, motivo: "Consumo al terminar el pedido" },
+        { tipo: "salida", cantidad: -5, enlazada: true, motivo: "Consumo al terminar el pedido" },
+      ]);
+      const eventos = (await tx.query("select tipo, descripcion from public.pedido_eventos where pedido_id = $1 and tipo in ('consumo', 'estado') order by id desc limit 2", [id])).rows;
+      expect(eventos).toEqual([{ tipo: "estado", descripcion: "Cambio de estado" }, { tipo: "consumo", descripcion: "11 prendas reservadas usadas al terminar" }]);
+    });
+  });
+
+  it("repetir la acción o reabrir y volver a terminar nunca descuenta dos veces", async () => {
+    await comoPropietario(db, async (tx) => {
+      const id = await convertir(tx);
+      await soloM(tx, id);
+      await reservar(tx, id, [{ variante_id: F.v1, cantidad: 6 }]);
+      await enProduccion(tx, id);
+      const plan = await preparar(tx, id);
+      await terminar(tx, id, plan.consumos);
+      const antes = await salidas(tx, id);
+      await tx.query("savepoint s");
+      await expect(terminar(tx, id, plan.consumos)).rejects.toThrow(/cannot be finished from state terminado/); // a second click or another device
+      await tx.query("rollback to savepoint s");
+      await estado(tx, id, "en_produccion"); // reopened
+      const otra = await preparar(tx, id);
+      expect(otra.consumos).toEqual([]);
+      await terminar(tx, id, []);
+      expect(await salidas(tx, id)).toEqual(antes);
+      expect(await stock(tx, F.v1)).toEqual({ fisico: 4, reservado: 0 });
+    });
+  });
+
+  it("tiene en cuenta lo anotado a mano: uso parcial y merma previa", async () => {
+    await comoPropietario(db, async (tx) => {
+      const id = await convertir(tx);
+      await soloM(tx, id);
+      await reservar(tx, id, [{ variante_id: F.v1, cantidad: 6 }]);
+      await enProduccion(tx, id);
+      await tx.query("select public.pedido_consumir($1, $2, 2)", [id, F.v1]); // partial use recorded by hand
+      await tx.query("select public.pedido_consumir($1, $2, 1, 'merma', 'Mancha')", [id, F.v1]); // one spoiled
+      const plan = await preparar(tx, id);
+      expect(plan.incidencias).toEqual([expect.objectContaining({ tipo: "faltan", cantidad: 1, mensaje: expect.stringMatching(/hubo 1 estropeadas/) })]);
+      await reservar(tx, id, [{ variante_id: F.v1, cantidad: 1 }]); // the replacement
+      const listo = await preparar(tx, id);
+      expect(resumen(listo)).toEqual([[F.v1, 4]]); // 6 needed - 2 already used
+      await terminar(tx, id, listo.consumos);
+      expect((await material(tx, id))[0]).toMatchObject({ usado: 6, merma: 1, reservado: 0, falta: 0 });
+      expect(await stock(tx, F.v1)).toEqual({ fisico: 3, reservado: 0 }); // 10 - 2 - 1 - 4
+    });
+  });
+
+  it("reservas de más, cambios entre el resumen y la confirmación, y estados no permitidos: nada cambia", async () => {
+    const id = await comoPropietario(db, async (tx) => {
+      const nuevo = await convertir(tx);
+      await soloM(tx, nuevo);
+      await reservar(tx, nuevo, [{ variante_id: F.v1, cantidad: 6 }]);
+      return nuevo;
+    });
+    expect(await codigoError(() => comoPropietario(db, (tx) => terminar(tx, id, [{ variante_id: F.v1, cantidad: 6 }])))).toBe("23514"); // not in production yet
+    await comoPropietario(db, (tx) => enProduccion(tx, id));
+    // the summary said 6, but meanwhile 2 were recorded by hand: the confirmation no longer matches
+    await comoPropietario(db, (tx) => tx.query("select public.pedido_consumir($1, $2, 2)", [id, F.v1]));
+    expect(await codigoError(() => comoPropietario(db, (tx) => terminar(tx, id, [{ variante_id: F.v1, cantidad: 6 }])))).toBe("40001");
+    // an extra reservation made from the inventory with this order's id
+    await comoPropietario(db, (tx) => tx.query("select public.stock_reservar($1, 1, 'Extra ficticia', $2)", [F.v1, id]));
+    const plan = await comoPropietario(db, (tx) => preparar(tx, id));
+    expect(plan.incidencias).toEqual([expect.objectContaining({ tipo: "reservadas_de_mas", cantidad: 1 })]);
+    expect(await codigoError(() => comoPropietario(db, (tx) => terminar(tx, id, [{ variante_id: F.v1, cantidad: 4 }])))).toBe("23514");
+    expect(await comoPropietario(db, async (tx) => [(await pedido(tx, id)).estado, await stock(tx, F.v1)])).toEqual(["en_produccion", { fisico: 8, reservado: 5 }]);
+    // only the owner
+    expect(await codigoError(() => comoIntruso(db, (tx) => preparar(tx, id)))).toBe("42501");
+    expect(await codigoError(() => comoIntruso(db, (tx) => terminar(tx, id, [])))).toBe("42501");
+  });
+});

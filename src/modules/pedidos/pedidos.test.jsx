@@ -19,7 +19,7 @@ const resumen = (id, numero, cambios) => ({
   unidades: 0, unidades_cubiertas: 0, unidades_faltan: 0, pendiente_comprar: 0, pendiente_recibir: 0, lineas_sin_catalogo: 0, ...cambios,
 });
 
-const crearSb = () => {
+const crearSb = (extraRpcs = {}, estadoPedido = "pendiente_preparar") => {
   const llamadas = [];
   const sb = crearClienteFalso({
     tablas: {
@@ -29,7 +29,7 @@ const crearSb = () => {
         resumen(3, "P-2026/003", { estado: "entregado", cobro_estado: "cobrado", cliente_nombre: "Peña Inventada" }),
       ],
       pedidos: [{
-        id: 1, numero: "P-2026/001", presupuesto_id: 9, cliente_nombre: "Club Ficticio", estado: "pendiente_preparar", cobro_estado: "pendiente", importe_cobrado_cent: 0,
+        id: 1, numero: "P-2026/001", presupuesto_id: 9, cliente_nombre: "Club Ficticio", estado: estadoPedido, cobro_estado: "pendiente", importe_cobrado_cent: 0,
         precio_acordado_cent: 12000, coste_previsto_cent: 8000, economico: { presupuesto_numero: "2026/009", beneficio_cent: 4000, parametros_version: 3 },
         trabajo: { tecnica: "serigrafia", zonas: [{ nombre: "Pecho", colores: 2 }] }, fecha_entrega: "2026-11-20", fecha_inicio_prevista: null, instrucciones: "Tinta al agua",
         notas_internas: null, creado_en: "2026-10-20T10:00:00Z",
@@ -54,12 +54,15 @@ const crearSb = () => {
         { id: 2, pedido_id: 2, numero: "P-2026/002", variante_id: 8, proveedor: "Proveedor Ficticio", marca: null, modelo: "Base", color: "NEGRO", talla: "L", cantidad: 4, estado: "pedida" },
       ],
     },
-    rpcs: Object.fromEntries(["crear_pedido_desde_presupuesto", "pedido_reservar", "pedido_consumir", "pedido_cambiar_estado", "pedido_necesidad_estado", "pedido_registrar_cobro"].map((n) => [
-      n, (args) => {
-        llamadas.push([n, args]);
-        return { data: n === "crear_pedido_desde_presupuesto" ? 5 : null, error: null };
-      },
-    ])),
+    rpcs: {
+      ...Object.fromEntries(["crear_pedido_desde_presupuesto", "pedido_reservar", "pedido_consumir", "pedido_cambiar_estado", "pedido_necesidad_estado", "pedido_registrar_cobro", "pedido_terminar"].map((n) => [
+        n, (args) => {
+          llamadas.push([n, args]);
+          return { data: n === "crear_pedido_desde_presupuesto" ? 5 : null, error: null };
+        },
+      ])),
+      ...extraRpcs,
+    },
   });
   return { sb, llamadas };
 };
@@ -179,5 +182,44 @@ describe("material que falta", () => {
     expect(fila.textContent).toMatch(/Base · NEGRO L\s*2\s*4.*P-2026\/001 \(2\).*P-2026\/002 \(4\)/);
     await user.click(within(fila).getByRole("button", { name: "Ya pedidas" }));
     expect(llamadas).toEqual([["pedido_necesidad_estado", { p_pedido_id: 1, p_variante_id: 8, p_estado: "pedida" }]]);
+  });
+});
+
+describe("terminar el pedido con consumo automático", () => {
+  const plan = (cambios) => () => ({ data: { consumos: [{ variante_id: 7, descripcion: "Base · NEGRO M", cantidad: 6 }, { variante_id: 8, descripcion: "Base · NEGRO L", cantidad: 5 }], incidencias: [], sin_catalogo: [{ descripcion: "Delantal del cliente", cantidad: 2 }], estado: "en_produccion", permitido: true, ...cambios }, error: null });
+
+  it("muestra lo que se descontará y termina en un solo paso", async () => {
+    const user = userEvent.setup();
+    const { sb, llamadas } = crearSb({ pedido_preparar_terminar: plan({}) }, "en_produccion");
+    montar(sb, "/pedidos/1");
+    await user.click(await screen.findByRole("button", { name: "Marcar como terminado" }));
+    const panel = screen.getByRole("region", { name: "Terminar el pedido" });
+    expect(panel.textContent).toMatch(/6 × Base · NEGRO M.*5 × Base · NEGRO L/);
+    expect(panel.textContent).toMatch(/no se descuentan.*2 × Delantal del cliente/);
+    expect(llamadas).toEqual([]); // nothing done before confirming
+    await user.click(within(panel).getByRole("button", { name: "Terminar y descontar" }));
+    expect(await screen.findByText("Pedido terminado y prendas descontadas del almacén.")).toBeTruthy();
+    expect(llamadas).toEqual([["pedido_terminar", { p_pedido_id: 1, p_esperado: [{ variante_id: 7, cantidad: 6 }, { variante_id: 8, cantidad: 5 }] }]]);
+  });
+
+  it("si hay incidencias explica qué resolver y no termina", async () => {
+    const user = userEvent.setup();
+    const { sb, llamadas } = crearSb({ pedido_preparar_terminar: plan({ consumos: [], incidencias: [{ variante_id: 8, tipo: "faltan", mensaje: "Base · NEGRO L: faltan 2 por reservar o anotar. Resérvalas o anota cómo se usaron." }] }) }, "en_produccion");
+    montar(sb, "/pedidos/1");
+    await user.click(await screen.findByRole("button", { name: "Marcar como terminado" }));
+    const panel = screen.getByRole("region", { name: "Terminar el pedido" });
+    expect(panel.textContent).toMatch(/Antes de terminar.*faltan 2 por reservar.*No se ha descontado nada/);
+    expect(within(panel).queryByRole("button", { name: /Terminar/ })).toBeNull();
+    await user.click(within(panel).getByRole("button", { name: "Entendido" }));
+    expect(llamadas).toEqual([]);
+  });
+
+  it("sin la función nueva en la base, se comporta como antes (solo cambia el estado)", async () => {
+    const user = userEvent.setup();
+    const { sb, llamadas } = crearSb({}, "en_produccion"); // pedido_preparar_terminar does not exist
+    montar(sb, "/pedidos/1");
+    await user.click(await screen.findByRole("button", { name: "Marcar como terminado" }));
+    await aceptarDialogo(user, "Marcar como terminado");
+    expect(llamadas).toEqual([["pedido_cambiar_estado", { p_pedido_id: 1, p_estado: "terminado", p_motivo: null }]]);
   });
 });

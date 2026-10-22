@@ -102,7 +102,7 @@ export const siguientePaso = (p, material = []) => {
     case "listo_produccion":
       return "Cuando empecéis a estampar, pulsa «Empezar producción».";
     case "en_produccion":
-      return "Anota las prendas usadas (y las estropeadas, si hay). Al acabar, «Marcar como terminado».";
+      return "Al acabar, pulsa «Marcar como terminado»: las prendas reservadas se descuentan solas. Anota antes solo lo excepcional (estropeadas o sobrantes).";
     case "terminado":
       return "Cuando el cliente lo recoja, «Marcar como entregado».";
     case "entregado":

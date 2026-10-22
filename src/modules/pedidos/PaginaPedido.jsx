@@ -10,6 +10,7 @@ import { InsigniaPedido, InsigniaCobro } from "./Insignias";
 import { ESTADOS_PEDIDO, accionesPedido, propuestaReserva, siguientePaso } from "./domain/pedidos";
 import {
   obtenerPedido, actualizarPedido, cambiarEstadoPedido, registrarCobro, reservarPrendas, liberarPrendas, consumirPrendas, devolverPrendas, estadoNecesidad,
+  prepararTerminar, terminarPedido,
 } from "./data/pedidosRepo";
 
 const fechaHora = (iso) => new Date(iso).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" });
@@ -31,6 +32,7 @@ function PaginaPedido({ obtenerCliente = obtenerClienteSupabase }) {
   const [edicion, setEdicion] = useState(null); // { fecha_entrega, fecha_inicio_prevista, instrucciones, notas_internas }
   const [cobro, setCobro] = useState("");
   const [cancelando, setCancelando] = useState(null); // reason being typed
+  const [terminando, setTerminando] = useState(null); // { consumos, incidencias, sin_catalogo } summary before finishing
 
   const cargar = useCallback(async () => {
     try {
@@ -74,6 +76,15 @@ function PaginaPedido({ obtenerCliente = obtenerClienteSupabase }) {
 
   const cambiarEstado = async (a) => {
     if (a.hasta === "cancelado") return setCancelando("");
+    if (a.hasta === "terminado") {
+      // finishing also uses the reserved garments still pending: show the summary first
+      try {
+        const plan = await prepararTerminar(await obtenerCliente(), p.id);
+        if (plan) return setTerminando(plan);
+      } catch (e) {
+        return setMensaje({ tipo: "danger", texto: e.message });
+      }
+    }
     if (!(await confirmar({ titulo: `¿${a.etiqueta}?`, mensaje: `El pedido pasará a «${ESTADOS_PEDIDO[a.hasta].etiqueta}».`, aceptar: a.etiqueta }))) return;
     await ejecutar((sb) => cambiarEstadoPedido(sb, p.id, a.hasta), `Estado: ${ESTADOS_PEDIDO[a.hasta].etiqueta}.`);
   };
@@ -134,6 +145,41 @@ function PaginaPedido({ obtenerCliente = obtenerClienteSupabase }) {
         ))}
       </div>
 
+      {terminando && (
+        <section className={`border rounded p-3 mb-3 ${terminando.incidencias.length ? "border-warning" : "border-success"}`} aria-label="Terminar el pedido">
+          {terminando.incidencias.length > 0 ? (
+            <>
+              <h2 className="h6">Antes de terminar, hay que resolver esto:</h2>
+              <ul className="small mb-2">{terminando.incidencias.map((i) => <li key={`${i.variante_id}-${i.tipo}`}>{i.mensaje}</li>)}</ul>
+              <p className="small text-muted">No se ha descontado nada y el pedido sigue en producción. Usa «Reservar prendas», «Anotar prendas usadas o estropeadas» o «Liberar reservas» y vuelve a pulsar «Marcar como terminado».</p>
+              <button type="button" className="btn btn-outline-secondary btn-sm" onClick={() => setTerminando(null)}>Entendido</button>
+            </>
+          ) : (
+            <>
+              <h2 className="h6">Terminar el pedido</h2>
+              {terminando.consumos.length > 0 ? (
+                <>
+                  <p className="small mb-1">Se descontarán del almacén las prendas reservadas que quedan por usar:</p>
+                  <ul className="small mb-2">{terminando.consumos.map((c) => <li key={c.variante_id}><strong>{c.cantidad}</strong> × {c.descripcion}</li>)}</ul>
+                </>
+              ) : <p className="small">No queda ninguna prenda reservada por usar: no se descuenta nada.</p>}
+              {terminando.sin_catalogo.length > 0 && <p className="small text-muted">No vinculadas al catálogo (no se descuentan): {terminando.sin_catalogo.map((l) => `${l.cantidad} × ${l.descripcion}`).join(", ")}.</p>}
+              <p className="small text-muted">Si alguna prenda se estropeó o sobró, anótalo antes con «Anotar prendas usadas o estropeadas».</p>
+              <div className="d-flex gap-2">
+                <button type="button" className="btn btn-success btn-sm" disabled={ocupado}
+                  onClick={async () => {
+                    const ok = await ejecutar((sb) => terminarPedido(sb, p.id, terminando.consumos), terminando.consumos.length ? "Pedido terminado y prendas descontadas del almacén." : "Pedido terminado.");
+                    if (ok) setTerminando(null);
+                    else setTerminando(await prepararTerminar(await obtenerCliente(), p.id).catch(() => null)); // something changed: show the new summary
+                  }}>
+                  {terminando.consumos.length ? "Terminar y descontar" : "Terminar"}
+                </button>
+                <button type="button" className="btn btn-outline-secondary btn-sm" onClick={() => setTerminando(null)}>Cancelar</button>
+              </div>
+            </>
+          )}
+        </section>
+      )}
       {cancelando !== null && (
         <form className="border border-danger rounded p-3 mb-3" aria-label="Cancelar pedido" onSubmit={async (e) => {
           e.preventDefault();

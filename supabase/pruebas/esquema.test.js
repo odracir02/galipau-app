@@ -19,7 +19,7 @@ const insertarCliente = (tx, datos = {}) =>
 
 describe("migraciones", () => {
   it("se aplican en orden y crean el esquema esperado", async () => {
-    expect(listarMigraciones()).toEqual(["20261015120000_esquema_inicial.sql", "20261015120100_almacenamiento.sql", "20261016090000_parametros_calculo.sql", "20261017090000_presupuestos_ciclo_vida.sql", "20261018090000_catalogo_precio_neto.sql", "20261021090000_catalogo_gestion.sql", "20261022090000_inventario.sql", "20261023090000_tarifas_proveedor.sql", "20261024090000_importaciones_sin_ciclo.sql", "20261025090000_categorias.sql", "20261026090000_pedidos.sql"]);
+    expect(listarMigraciones()).toEqual(["20261015120000_esquema_inicial.sql", "20261015120100_almacenamiento.sql", "20261016090000_parametros_calculo.sql", "20261017090000_presupuestos_ciclo_vida.sql", "20261018090000_catalogo_precio_neto.sql", "20261021090000_catalogo_gestion.sql", "20261022090000_inventario.sql", "20261023090000_tarifas_proveedor.sql", "20261024090000_importaciones_sin_ciclo.sql", "20261025090000_categorias.sql", "20261026090000_pedidos.sql", "20261027090000_pedido_terminar.sql"]);
     const { rows } = await db.query("select tablename from pg_tables where schemaname = 'public' order by tablename");
     expect(rows.map((r) => r.tablename)).toEqual([
       "categorias", "clasificacion_cambios", "clientes", "configuracion", "contadores", "importaciones", "importaciones_cambios", "modelos", "parametros_calculo", "pedido_eventos", "pedido_lineas", "pedidos", "presupuestos", "propietario", "proveedores", "registro_copias", "stock_articulos", "stock_movimientos", "stock_necesidades", "stock_reservas", "variantes", "variantes_tarifas",

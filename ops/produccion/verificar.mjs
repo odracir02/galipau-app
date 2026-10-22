@@ -34,6 +34,8 @@ export const FUNCIONES = {
   crear_pedido: { p_datos: {} },
   pedido_cambiar_estado: { p_pedido_id: -1, p_estado: "x", p_motivo: null },
   pedido_reservar: { p_pedido_id: -1, p_lineas: [], p_registrar_faltantes: false },
+  pedido_terminar: { p_pedido_id: -1, p_esperado: [] },
+  pedido_preparar_terminar: { p_pedido_id: -1 },
   pedido_consumir: { p_pedido_id: -1, p_variante_id: -1, p_cantidad: 1, p_tipo: "salida", p_motivo: null, p_desde_disponible: false },
   transicion_presupuesto_permitida: { p_desde: "x", p_hasta: "y" },
 };
