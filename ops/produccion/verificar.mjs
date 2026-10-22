@@ -14,7 +14,7 @@ import { esClaveSecreta } from "../../src/shared/supabase/config.js";
 export const TABLAS = [
   "clientes", "configuracion", "contadores", "importaciones", "modelos", "parametros_calculo",
   "presupuestos", "propietario", "proveedores", "registro_copias", "variantes", "v_catalogo_plano", "v_catalogo_admin",
-  "stock_articulos", "stock_movimientos", "stock_reservas", "stock_necesidades", "v_stock", "v_stock_compras", "variantes_tarifas", "importaciones_cambios", "categorias", "clasificacion_cambios",
+  "stock_articulos", "stock_movimientos", "stock_reservas", "stock_necesidades", "v_stock", "v_stock_compras", "variantes_tarifas", "importaciones_cambios", "categorias", "clasificacion_cambios", "pedidos", "pedido_lineas", "pedido_eventos", "v_pedidos", "v_pedidos_material", "v_necesidades_pedidos",
 ];
 
 // Called with arguments that would fail anyway: they must be rejected before running
@@ -30,6 +30,11 @@ export const FUNCIONES = {
   clasificar_modelos: { p_modelos: [], p_categoria: "x" },
   deshacer_clasificacion: { p_lote: "00000000-0000-0000-0000-000000000000" },
   fusionar_categorias: { p_origen: "x", p_destino: "y" },
+  crear_pedido_desde_presupuesto: { p_presupuesto_id: -1, p_datos: {} },
+  crear_pedido: { p_datos: {} },
+  pedido_cambiar_estado: { p_pedido_id: -1, p_estado: "x", p_motivo: null },
+  pedido_reservar: { p_pedido_id: -1, p_lineas: [], p_registrar_faltantes: false },
+  pedido_consumir: { p_pedido_id: -1, p_variante_id: -1, p_cantidad: 1, p_tipo: "salida", p_motivo: null, p_desde_disponible: false },
   transicion_presupuesto_permitida: { p_desde: "x", p_hasta: "y" },
 };
 

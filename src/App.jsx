@@ -20,6 +20,10 @@ import PaginaCatalogo from "./modules/catalogo/PaginaCatalogo";
 import PaginaProveedores from "./modules/catalogo/PaginaProveedores";
 import PaginaImportarTarifa from "./modules/tarifas/PaginaImportarTarifa";
 import PaginaClasificar from "./modules/catalogo/PaginaClasificar";
+import PaginaPedidos from "./modules/pedidos/PaginaPedidos";
+import PaginaPedido from "./modules/pedidos/PaginaPedido";
+import PaginaNuevoPedido from "./modules/pedidos/PaginaNuevoPedido";
+import PaginaNecesidades from "./modules/pedidos/PaginaNecesidades";
 import PaginaCategorias from "./modules/catalogo/PaginaCategorias";
 import { PaginaTarifas, PaginaImportacionTarifa } from "./modules/tarifas/PaginaTarifas";
 import PaginaFichaProveedor from "./modules/catalogo/PaginaFichaProveedor";
@@ -64,7 +68,10 @@ function App({ servicioSesion }) {
                     <Route path="/catalogo/tarifas" element={<PaginaTarifas />} />
                     <Route path="/catalogo/tarifas/importar" element={<PaginaImportarTarifa />} />
                     <Route path="/catalogo/tarifas/:id" element={<PaginaImportacionTarifa />} />
-                    <Route path="/pedidos" element={<PaginaProximamente modulo="pedidos" />} />
+                    <Route path="/pedidos" element={<PaginaPedidos />} />
+                    <Route path="/pedidos/nuevo" element={<PaginaNuevoPedido />} />
+                    <Route path="/pedidos/necesidades" element={<PaginaNecesidades />} />
+                    <Route path="/pedidos/:id" element={<PaginaPedido />} />
                     <Route path="/produccion" element={<PaginaProximamente modulo="produccion" />} />
                     <Route path="/inventario" element={<PaginaInventario />} />
                     <Route path="/inventario/movimiento" element={<PaginaMovimiento />} />

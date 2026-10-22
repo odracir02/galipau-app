@@ -16,7 +16,7 @@ describe("SQL de instalación en un solo archivo", () => {
     await db.exec(fs.readFileSync(new URL("../../supabase/pruebas/entorno-supabase.sql", import.meta.url), "utf8"));
     await db.exec(sql);
     const { rows } = await db.query("select count(*)::int n from pg_tables where schemaname = 'public'");
-    expect(rows[0].n).toBe(19);
+    expect(rows[0].n).toBe(22);
     await db.close();
   });
 

@@ -32,6 +32,11 @@ beforeAll(async () => {
     await tx.query("select public.stock_corregir($1, 'Eran 3')", [entrada]);
     await tx.query("select public.stock_registrar($1, 'entrada', 3, null, 'Albarán ficticio', 3.1)", [variante]);
     await tx.query("select public.stock_reservar($1, 5, 'PED-FICTICIO')", [variante]);
+    // An order with a reservation, a partial consumption and a purchase need (orders reference stock and stock references orders' rows)
+    const pedido = (await tx.query("select public.crear_pedido($1::jsonb) id", [JSON.stringify({ cliente_nombre: "Club Deportivo Ficticio", precio_acordado_cent: 5000, lineas: [{ variante_id: variante, descripcion: "Prenda ficticia", cantidad: 40 }] })])).rows[0].id;
+    await tx.query("select public.pedido_reservar($1, $2::jsonb, true)", [pedido, JSON.stringify([{ variante_id: variante, cantidad: 10 }])]);
+    await tx.query("select public.pedido_consumir($1, $2, 4)", [pedido, variante]);
+    await tx.query("select public.pedido_cambiar_estado($1, 'pendiente_material')", [pedido]);
   });
   await origen.exec("insert into public.registro_copias (tipo, estado, detalle) values ('base_datos', 'correcta', '{\"prueba\": true}')");
   // As in production: suppliers created by a catalogue import (proveedores -> importaciones) and a
@@ -63,8 +68,8 @@ afterAll(async () => {
 describe("volcado", () => {
   it("contiene la estructura, la seguridad y los datos esperados", () => {
     expect(copia.esquema).toMatch(/CREATE TABLE public\.presupuestos/);
-    expect((copia.esquema.match(/ENABLE ROW LEVEL SECURITY/g) ?? []).length).toBe(19);
-    expect((copia.esquema.match(/CREATE POLICY/g) ?? []).length).toBe(29);
+    expect((copia.esquema.match(/ENABLE ROW LEVEL SECURITY/g) ?? []).length).toBe(22);
+    expect((copia.esquema.match(/CREATE POLICY/g) ?? []).length).toBe(32);
     expect((copia.datos.match(/^INSERT INTO public\.variantes \(/gm) ?? []).length).toBe(37);
     expect(copia.datos).toMatch(/OVERRIDING SYSTEM VALUE/);
     expect(copia.datos).toMatch(/setval\('public\.clientes_id_seq'/);
@@ -115,8 +120,8 @@ describe("restauración en una base de datos aislada", () => {
     const restaurado = (await db.query("select numero, estado, version, jsonb_array_length(historial_estados) n from public.presupuestos")).rows[0];
     expect(restaurado).toEqual({ numero: "2026/001", estado: "aceptado", version: 1, n: 3 });
     const stock = (await db.query("select fisico, reservado from public.stock_articulos")).rows[0];
-    expect(stock).toEqual({ fisico: 15, reservado: 5 });
-    expect((await db.query("select count(*)::int n, count(corrige_movimiento_id)::int c from public.stock_movimientos")).rows[0]).toEqual({ n: 4, c: 1 });
+    expect(stock).toEqual({ fisico: 11, reservado: 11 }); // 4 used by the order; 5 + 10 - 4 reserved
+    expect((await db.query("select count(*)::int n, count(corrige_movimiento_id)::int c from public.stock_movimientos")).rows[0]).toEqual({ n: 5, c: 1 });
     // The next quote presented after the restore gets the next number
     await db.exec("set row_security = on"); // the dump session turns it off
     const siguiente = await comoPropietario(db, async (tx) => {
@@ -124,6 +129,15 @@ describe("restauración en una base de datos aislada", () => {
       return (await tx.query("update public.presupuestos set estado = 'presentado' where id = $1 returning numero", [nuevo])).rows[0].numero;
     });
     expect(siguiente).toBe("2026/002");
+    // orders keep their state, reservations and needs, and the next order gets the next number
+    const pedido = (await db.query("select numero, estado from public.pedidos")).rows[0];
+    expect(pedido.estado).toBe("pendiente_material");
+    expect((await db.query("select estado, cantidad from public.stock_necesidades where pedido_id is not null")).rows).toEqual([{ estado: "pendiente", cantidad: 30 }]); // 40 needed - 10 reserved (4 of them used)
+    const nuevoPedido = await comoPropietario(db, async (tx) => {
+      const { id } = (await tx.query("select public.crear_pedido($1::jsonb) id", [JSON.stringify({ cliente_nombre: "Y", precio_acordado_cent: 1, lineas: [] })])).rows[0];
+      return (await tx.query("select numero from public.pedidos where id = $1", [id])).rows[0].numero;
+    });
+    expect(Number(nuevoPedido.split("/")[1])).toBe(Number(pedido.numero.split("/")[1]) + 1);
     await db.close();
   });
 

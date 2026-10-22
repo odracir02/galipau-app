@@ -16,7 +16,7 @@ export const NAVEGACION_NUBE = [
     seccion: "Taller",
     enlaces: [
       { ruta: "/catalogo", texto: "Catálogo", icono: BookOpen },
-      { ruta: "/pedidos", texto: "Pedidos", icono: ClipboardList, proximamente: true },
+      { ruta: "/pedidos", texto: "Pedidos", icono: ClipboardList },
       { ruta: "/produccion", texto: "Producción", icono: Factory, proximamente: true },
       { ruta: "/inventario", texto: "Inventario", icono: Package },
     ],

@@ -72,7 +72,7 @@ function PaginaCompras({ obtenerCliente = obtenerClienteSupabase, cargarProducto
                     <td>{c.modelo} · {c.color} · {c.talla}<div className="small text-muted">{c.propio ? "Producto propio" : c.proveedor}</div></td>
                     <td className="text-end">{c.disponible}</td>
                     <td className="text-end">{c.stock_minimo || "—"}</td>
-                    <td className="text-end">{Number(c.necesidades) || "—"}</td>
+                    <td className="text-end">{Number(c.necesidades) || "—"}{Number(c.pendiente_recibir) > 0 && <div className="small text-muted">{c.pendiente_recibir} pedidas, sin llegar</div>}</td>
                     <td className="text-end fw-semibold" data-testid={`sugerido-${c.variante_id}`}>{c.sugerido}</td>
                     <td className="text-end d-none d-md-table-cell">{euro5(Number(c.sugerido) * Number(c.coste_catalogo ?? 0))}</td>
                   </tr>

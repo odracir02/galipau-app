@@ -184,6 +184,21 @@ describe("editor de presupuestos", () => {
     expect(tablas.presupuestos[0].estado).toBe("cobrado");
   });
 
+  it("un presupuesto aceptado ofrece crear el pedido; si ya lo tiene, enlaza y el estado lo lleva el pedido", async () => {
+    const { sb, tablas } = crearBd({ presupuestos: [{ ...registroFicticio(), estado: "aceptado" }], parametros: [fila(3)] });
+    renderEditor(sb, "/presupuestos/1");
+    const crear = await screen.findByRole("link", { name: "Crear pedido" });
+    expect(crear.getAttribute("href")).toBe("/pedidos/nuevo?presupuesto=1");
+    expect(screen.getByRole("button", { name: "Pasar a producción" })).toBeTruthy();
+    cleanup();
+    tablas.pedidos = [{ id: 4, numero: "P-2026/004", estado: "pendiente_material", presupuesto_id: 1 }];
+    renderEditor(sb, "/presupuestos/1");
+    expect((await screen.findByRole("link", { name: "P-2026/004" })).getAttribute("href")).toBe("/pedidos/4");
+    expect(screen.getByText(/pendiente de material/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Pasar a producción" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Crear pedido" })).toBeNull();
+  });
+
   it("crea un cliente nuevo desde el presupuesto", async () => {
     const user = userEvent.setup();
     const { sb, tablas } = crearBd({ clientes: [] });

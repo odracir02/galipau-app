@@ -10,6 +10,8 @@ import { obtenerClienteSupabase } from "../../shared/supabase/cliente";
 import { getProductos } from "../../services/getProductos";
 import { cargarEmpresa } from "../empresa/empresaRepo";
 import { obtenerPresupuesto, crearPresupuesto, actualizarPresupuesto, cambiarEstado, cargarVersionParametros } from "./data/presupuestosRepo";
+import { pedidoDePresupuesto } from "../pedidos/data/pedidosRepo";
+import { PRESUPUESTO_CONVERTIBLE, ESTADOS_PEDIDO } from "../pedidos/domain/pedidos";
 import { construirRegistro, estadoDesdeRegistro, estadoDuplicado, formularioVacio, datosDocumentoIniciales, reproducir, sinPrecioGuardado } from "./domain/instantanea";
 import { ESTADOS, accionesDesde, esEditable, requierePrecioFinal } from "./domain/estados";
 import { IDIOMAS } from "./domain/documento";
@@ -49,6 +51,7 @@ function PaginaEditorPresupuesto({ obtenerCliente = obtenerClienteSupabase, carg
   const [sucio, setSucio] = useState(false);
   const [ocupado, setOcupado] = useState(false);
   const [mensaje, setMensaje] = useState(null);
+  const [pedido, setPedido] = useState(undefined); // the quote's active order (null: none)
 
   const cargar = useCallback(async () => {
     setCargado(false);
@@ -103,6 +106,16 @@ function PaginaEditorPresupuesto({ obtenerCliente = obtenerClienteSupabase, carg
   useEffect(() => {
     cargar();
   }, [cargar]);
+
+  // An accepted quote offers its order; once it has one, production and payment are tracked there
+  useEffect(() => {
+    if (!sb || !registro?.id || !PRESUPUESTO_CONVERTIBLE.has(registro.estado)) return;
+    let vigente = true;
+    pedidoDePresupuesto(sb, registro.id).then((p) => vigente && setPedido(p ?? null));
+    return () => {
+      vigente = false;
+    };
+  }, [sb, registro?.id, registro?.estado]);
 
   // Warn before leaving with unsaved changes
   useEffect(() => {
@@ -275,7 +288,18 @@ function PaginaEditorPresupuesto({ obtenerCliente = obtenerClienteSupabase, carg
 
       {mensaje && <Aviso tipo={mensaje.tipo}>{mensaje.texto}</Aviso>}
 
-      {(registro || estado === "borrador") && accionesDesde(estado).length > 0 && (
+      {pedido && (
+        <div className="alert alert-light border small py-2">
+          Este presupuesto es el pedido <Link to={`/pedidos/${pedido.id}`} className="fw-semibold">{pedido.numero}</Link> ({ESTADOS_PEDIDO[pedido.estado]?.etiqueta.toLowerCase()}). La producción, la entrega y el cobro se llevan desde el pedido.
+        </div>
+      )}
+      {pedido === null && registro && PRESUPUESTO_CONVERTIBLE.has(estado) && (
+        <div className="alert alert-success d-flex flex-wrap align-items-center gap-2 py-2">
+          <span>Presupuesto aceptado. ¿Lo conviertes en pedido para preparar el material y la producción?</span>
+          <Link to={`/pedidos/nuevo?presupuesto=${registro.id}`} className="btn btn-success btn-sm">Crear pedido</Link>
+        </div>
+      )}
+      {!pedido && (registro || estado === "borrador") && accionesDesde(estado).length > 0 && (
         <div className="d-flex flex-wrap gap-2 mb-3" aria-label="Cambiar estado">
           {accionesDesde(estado).map((a) => (
             <button key={a.hasta} type="button" disabled={ocupado}
