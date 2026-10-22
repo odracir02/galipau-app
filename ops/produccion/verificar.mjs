@@ -55,13 +55,16 @@ export const verificarProyecto = async ({ url, clave, fetch: pedir = globalThis.
       /* not JSON */
     }
     const ok = denegado(r.status) || (r.status === 200 && Array.isArray(filas) && filas.length === 0);
-    resultados.push({ prueba: `tabla ${tabla}`, ok, detalle: ok ? (denegado(r.status) ? `acceso denegado (${r.status})` : "sin filas visibles") : `¡DATOS VISIBLES! (${r.status})` });
+    // 404: not in the API at all (safe, but a migration is probably missing)
+    const falta = r.status === 404;
+    resultados.push({ prueba: `tabla ${tabla}`, ok, falta, detalle: falta ? "no existe (¿migración pendiente?)" : ok ? (denegado(r.status) ? `acceso denegado (${r.status})` : "sin filas visibles") : `¡DATOS VISIBLES! (${r.status})` });
   }
 
   for (const [nombre, args] of Object.entries(FUNCIONES)) {
     const r = await pedir(`${base}/rest/v1/rpc/${nombre}`, { method: "POST", headers: cabeceras, body: JSON.stringify(args) });
     const ok = denegado(r.status);
-    resultados.push({ prueba: `función ${nombre}`, ok, detalle: ok ? `denegada (${r.status})` : `¡EJECUTABLE SIN SESIÓN! (${r.status})` });
+    const falta = r.status === 404;
+    resultados.push({ prueba: `función ${nombre}`, ok, falta, detalle: falta ? "no existe (¿migración pendiente?)" : ok ? `denegada (${r.status})` : `¡EJECUTABLE SIN SESIÓN! (${r.status})` });
   }
 
   const r = await pedir(`${base}/auth/v1/settings`, { headers: { apikey: clave } });
@@ -69,14 +72,15 @@ export const verificarProyecto = async ({ url, clave, fetch: pedir = globalThis.
   const sinRegistro = ajustes?.disable_signup === true;
   resultados.push({ prueba: "registro público", ok: sinRegistro, detalle: ajustes ? (sinRegistro ? "desactivado" : "¡ACTIVADO! Desactívalo en Authentication → Sign In / Providers") : `no se pudo leer (${r.status})` });
 
-  return { ok: resultados.every((x) => x.ok), resultados };
+  return { ok: resultados.every((x) => x.ok), faltan: resultados.filter((x) => x.falta).map((x) => x.prueba), resultados };
 };
 
 const esPrincipal = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (esPrincipal) {
   try {
-    const { ok, resultados } = await verificarProyecto({ url: process.env.SUPABASE_URL, clave: process.env.SUPABASE_PUBLISHABLE_KEY });
-    for (const x of resultados) console.log(`${x.ok ? "OK   " : "FALLO"}  ${x.prueba}: ${x.detalle}`);
+    const { ok, faltan, resultados } = await verificarProyecto({ url: process.env.SUPABASE_URL, clave: process.env.SUPABASE_PUBLISHABLE_KEY });
+    for (const x of resultados) console.log(`${x.ok ? (x.falta ? "FALTA" : "OK   ") : "FALLO"}  ${x.prueba}: ${x.detalle}`);
+    if (faltan.length) console.log(`\nAviso: ${faltan.length} tablas o funciones no existen en este proyecto: falta aplicar alguna migración.`);
     console.log(ok ? "\nTodo correcto: sin sesión no se ve ni se ejecuta nada." : "\nHay problemas de seguridad: revisa las líneas FALLO.");
     process.exit(ok ? 0 : 1);
   } catch (e) {

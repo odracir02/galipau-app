@@ -64,6 +64,14 @@ describe("verificación externa de un proyecto (como visitante anónimo)", () =>
     expect(r.resultados.find((x) => !x.ok).prueba).toBe(prueba);
   });
 
+  it("avisa de las tablas y funciones que no existen (migración pendiente), sin contarlo como fallo de seguridad", async () => {
+    const normal = fetchFalso();
+    const f = async (url, o) => (/\/categorias\?|clasificar_modelos/.test(url) ? respuesta(404, { code: "PGRST205" }) : normal(url, o));
+    const r = await verificarProyecto({ ...base, fetch: f });
+    expect(r.ok).toBe(true);
+    expect(r.faltan).toEqual(["tabla categorias", "función clasificar_modelos"]);
+  });
+
   it("una clave equivocada no cuenta como acceso denegado", async () => {
     const f = async () => ({ status: 401, ok: false, text: async () => JSON.stringify({ message: "Invalid API key" }), json: async () => ({}) });
     await expect(verificarProyecto({ ...base, fetch: f })).rejects.toThrow(/no es válida/);
