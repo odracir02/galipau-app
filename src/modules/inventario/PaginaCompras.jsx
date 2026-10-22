@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { ShoppingCart } from "lucide-react";
 import { obtenerClienteSupabase } from "../../shared/supabase/cliente";
 import { getProductos } from "../../services/getProductos";
@@ -58,6 +59,7 @@ function PaginaCompras({ obtenerCliente = obtenerClienteSupabase, cargarProducto
     <>
       <Cabecera titulo="Compras sugeridas" descripcion="Lo que falta para llegar al stock mínimo y cubrir las necesidades registradas. Es una recomendación: no se compra nada." />
       <NavInventario />
+      <Aviso tipo="info">Las compras a proveedores se preparan ahora en <Link to="/compras">Compras</Link>: allí se suman los pedidos y el stock mínimo por proveedor, y al registrar la llegada todo entra en el almacén y se reserva solo.</Aviso>
       {mensaje && <Aviso tipo={mensaje.tipo}>{mensaje.texto}</Aviso>}
       {compras === null ? <Cargando /> : compras.length === 0 ? (
         <div className="gx-tabla mb-3"><EstadoVacio icono={ShoppingCart} titulo="No falta nada">Ningún artículo está por debajo de su mínimo ni hay necesidades pendientes.</EstadoVacio></div>

@@ -15,6 +15,7 @@ export const TABLAS = [
   "clientes", "configuracion", "contadores", "importaciones", "modelos", "parametros_calculo",
   "presupuestos", "propietario", "proveedores", "registro_copias", "variantes", "v_catalogo_plano", "v_catalogo_admin",
   "stock_articulos", "stock_movimientos", "stock_reservas", "stock_necesidades", "v_stock", "v_stock_compras", "variantes_tarifas", "importaciones_cambios", "categorias", "clasificacion_cambios", "pedidos", "pedido_lineas", "pedido_eventos", "v_pedidos", "v_pedidos_material", "v_necesidades_pedidos",
+  "compras", "compra_lineas", "compra_recepciones", "compra_recepcion_lineas", "compra_eventos", "v_compras", "v_compras_lineas", "v_compras_por_comprar", "v_compras_por_comprar_pedidos",
 ];
 
 // Called with arguments that would fail anyway: they must be rejected before running
@@ -37,6 +38,10 @@ export const FUNCIONES = {
   pedido_terminar: { p_pedido_id: -1, p_esperado: [] },
   pedido_preparar_terminar: { p_pedido_id: -1 },
   pedido_consumir: { p_pedido_id: -1, p_variante_id: -1, p_cantidad: 1, p_tipo: "salida", p_motivo: null, p_desde_disponible: false },
+  compra_preparar: { p_proveedor_id: -1 },
+  compra_marcar_pedida: { p_compra_id: -1, p_referencia: null },
+  compra_previsualizar_recepcion: { p_compra_id: -1, p_lineas: [] },
+  compra_recibir: { p_compra_id: -1, p_clave: "00000000-0000-0000-0000-000000000000", p_lineas: [], p_esperado: [], p_fecha: null, p_albaran: null, p_confirmar_exceso: false },
   transicion_presupuesto_permitida: { p_desde: "x", p_hasta: "y" },
 };
 

@@ -23,7 +23,8 @@ import PaginaClasificar from "./modules/catalogo/PaginaClasificar";
 import PaginaPedidos from "./modules/pedidos/PaginaPedidos";
 import PaginaPedido from "./modules/pedidos/PaginaPedido";
 import PaginaNuevoPedido from "./modules/pedidos/PaginaNuevoPedido";
-import PaginaNecesidades from "./modules/pedidos/PaginaNecesidades";
+import PaginaComprasProveedor from "./modules/compras/PaginaCompras";
+import PaginaCompra from "./modules/compras/PaginaCompra";
 import PaginaCategorias from "./modules/catalogo/PaginaCategorias";
 import { PaginaTarifas, PaginaImportacionTarifa } from "./modules/tarifas/PaginaTarifas";
 import PaginaFichaProveedor from "./modules/catalogo/PaginaFichaProveedor";
@@ -70,7 +71,9 @@ function App({ servicioSesion }) {
                     <Route path="/catalogo/tarifas/:id" element={<PaginaImportacionTarifa />} />
                     <Route path="/pedidos" element={<PaginaPedidos />} />
                     <Route path="/pedidos/nuevo" element={<PaginaNuevoPedido />} />
-                    <Route path="/pedidos/necesidades" element={<PaginaNecesidades />} />
+                    <Route path="/pedidos/necesidades" element={<Navigate to="/compras" replace />} />
+                    <Route path="/compras" element={<PaginaComprasProveedor />} />
+                    <Route path="/compras/:id" element={<PaginaCompra />} />
                     <Route path="/pedidos/:id" element={<PaginaPedido />} />
                     <Route path="/produccion" element={<PaginaProximamente modulo="produccion" />} />
                     <Route path="/inventario" element={<PaginaInventario />} />

@@ -97,7 +97,12 @@ export const siguientePaso = (p, material = []) => {
     case "pendiente_preparar":
     case "pendiente_material":
       if (libres) return "Hay prendas en el almacén para este pedido: pulsa «Reservar prendas».";
-      if (falta > 0) return `Faltan ${falta} prendas: anótalas como compra pendiente y, cuando lleguen, resérvalas.`;
+      if (falta > 0) {
+        const porComprar = material.reduce((s, m) => s + (m.pendiente_comprar ?? 0), 0);
+        return porComprar > 0
+          ? `Faltan ${falta} prendas: prepara la compra en «Compras». Cuando lleguen, se reservan solas.`
+          : `Faltan ${falta} prendas, ya pedidas al proveedor: cuando lleguen, se reservan solas.`;
+      }
       return "Todo el material está reservado: pásalo a «Listo para producción».";
     case "listo_produccion":
       return "Cuando empecéis a estampar, pulsa «Empezar producción».";

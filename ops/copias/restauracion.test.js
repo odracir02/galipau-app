@@ -37,6 +37,14 @@ beforeAll(async () => {
     await tx.query("select public.pedido_reservar($1, $2::jsonb, true)", [pedido, JSON.stringify([{ variante_id: variante, cantidad: 10 }])]);
     await tx.query("select public.pedido_consumir($1, $2, 4)", [pedido, variante]);
     await tx.query("select public.pedido_cambiar_estado($1, 'pendiente_material')", [pedido]);
+    // A purchase from the same supplier, ordered and partly received (entry linked to the purchase; the order's garment is not received)
+    const otra = (await tx.query("insert into public.variantes (modelo_id, color, talla, coste_cent, precio_neto, iva_porcentaje) select modelo_id, 'AZUL FICTICIO', 'XL', 0, 2, 21 from public.variantes where id = $1 returning id", [variante])).rows[0].id;
+    const prov = (await tx.query("select m.proveedor_id from public.variantes v join public.modelos m on m.id = v.modelo_id where v.id = $1", [variante])).rows[0].proveedor_id;
+    const compra = (await tx.query("select public.compra_preparar($1) id", [prov])).rows[0].id;
+    await tx.query("select public.compra_guardar_lineas($1, $2::jsonb)", [compra, JSON.stringify([{ variante_id: otra, reposicion: 6 }])]);
+    await tx.query("select public.compra_marcar_pedida($1, 'WEB-FICTICIA')", [compra]);
+    const linea = (await tx.query("select id from public.compra_lineas where compra_id = $1 and variante_id = $2", [compra, otra])).rows[0].id;
+    await tx.query("select public.compra_recibir($1, gen_random_uuid(), $2::jsonb, '[]'::jsonb, null, 'ALB-FICTICIO')", [compra, JSON.stringify([{ compra_linea_id: linea, cantidad: 2 }])]);
   });
   await origen.exec("insert into public.registro_copias (tipo, estado, detalle) values ('base_datos', 'correcta', '{\"prueba\": true}')");
   // As in production: suppliers created by a catalogue import (proveedores -> importaciones) and a
@@ -68,9 +76,9 @@ afterAll(async () => {
 describe("volcado", () => {
   it("contiene la estructura, la seguridad y los datos esperados", () => {
     expect(copia.esquema).toMatch(/CREATE TABLE public\.presupuestos/);
-    expect((copia.esquema.match(/ENABLE ROW LEVEL SECURITY/g) ?? []).length).toBe(22);
-    expect((copia.esquema.match(/CREATE POLICY/g) ?? []).length).toBe(32);
-    expect((copia.datos.match(/^INSERT INTO public\.variantes \(/gm) ?? []).length).toBe(37);
+    expect((copia.esquema.match(/ENABLE ROW LEVEL SECURITY/g) ?? []).length).toBe(27);
+    expect((copia.esquema.match(/CREATE POLICY/g) ?? []).length).toBe(37);
+    expect((copia.datos.match(/^INSERT INTO public\.variantes \(/gm) ?? []).length).toBe(38);
     expect(copia.datos).toMatch(/OVERRIDING SYSTEM VALUE/);
     expect(copia.datos).toMatch(/setval\('public\.clientes_id_seq'/);
   });
@@ -119,9 +127,9 @@ describe("restauración en una base de datos aislada", () => {
     expect(rows[0].ultimo).toBe(1);
     const restaurado = (await db.query("select numero, estado, version, jsonb_array_length(historial_estados) n from public.presupuestos")).rows[0];
     expect(restaurado).toEqual({ numero: "2026/001", estado: "aceptado", version: 1, n: 3 });
-    const stock = (await db.query("select fisico, reservado from public.stock_articulos")).rows[0];
+    const stock = (await db.query("select fisico, reservado from public.stock_articulos order by id limit 1")).rows[0];
     expect(stock).toEqual({ fisico: 11, reservado: 11 }); // 4 used by the order; 5 + 10 - 4 reserved
-    expect((await db.query("select count(*)::int n, count(corrige_movimiento_id)::int c from public.stock_movimientos")).rows[0]).toEqual({ n: 5, c: 1 });
+    expect((await db.query("select count(*)::int n, count(corrige_movimiento_id)::int c from public.stock_movimientos")).rows[0]).toEqual({ n: 6, c: 1 });
     // The next quote presented after the restore gets the next number
     await db.exec("set row_security = on"); // the dump session turns it off
     const siguiente = await comoPropietario(db, async (tx) => {
@@ -138,6 +146,9 @@ describe("restauración en una base de datos aislada", () => {
       return (await tx.query("select numero from public.pedidos where id = $1", [id])).rows[0].numero;
     });
     expect(Number(nuevoPedido.split("/")[1])).toBe(Number(pedido.numero.split("/")[1]) + 1);
+    // the purchase keeps its partial receipt, linked to its stock entry
+    expect((await db.query("select situacion, recibidas, pendientes, referencia_proveedor from public.v_compras")).rows).toEqual([{ situacion: "parcial", recibidas: 2, pendientes: 34, referencia_proveedor: "WEB-FICTICIA" }]);
+    expect((await db.query("select count(*)::int n from public.compra_recepcion_lineas rl join public.stock_movimientos m on m.id = rl.movimiento_id and m.compra_id is not null")).rows[0].n).toBe(1);
     await db.close();
   });
 
@@ -145,7 +156,7 @@ describe("restauración en una base de datos aislada", () => {
     const lineas = copia.datos.split("\n");
     const sinUnaFila = lineas.filter((l, i) => i !== lineas.findIndex((x) => x.startsWith("INSERT INTO public.variantes"))).join("\n");
     const db = await restaurarConEsquema({ esquema: copia.esquema, datos: sinUnaFila });
-    expect(compararManifiestos(manifiestoOrigen, await calcularManifiesto(db))).toContain("variantes: 37 rows in source, 36 restored");
+    expect(compararManifiestos(manifiestoOrigen, await calcularManifiesto(db))).toContain("variantes: 38 rows in source, 37 restored");
     await db.close();
 
     const alterada = copia.datos.replace("3390", "3391");

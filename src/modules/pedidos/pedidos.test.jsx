@@ -9,7 +9,6 @@ import { crearClienteFalso } from "../../shared/supabase/clienteFalso";
 import PaginaPedidos from "./PaginaPedidos";
 import PaginaPedido from "./PaginaPedido";
 import PaginaNuevoPedido from "./PaginaNuevoPedido";
-import PaginaNecesidades from "./PaginaNecesidades";
 
 afterEach(() => cleanup());
 
@@ -19,7 +18,7 @@ const resumen = (id, numero, cambios) => ({
   unidades: 0, unidades_cubiertas: 0, unidades_faltan: 0, pendiente_comprar: 0, pendiente_recibir: 0, lineas_sin_catalogo: 0, ...cambios,
 });
 
-const crearSb = (extraRpcs = {}, estadoPedido = "pendiente_preparar") => {
+const crearSb = (extraRpcs = {}, estadoPedido = "pendiente_preparar", extraTablas = {}) => {
   const llamadas = [];
   const sb = crearClienteFalso({
     tablas: {
@@ -49,10 +48,7 @@ const crearSb = (extraRpcs = {}, estadoPedido = "pendiente_preparar") => {
         entrada: { formulario: { lineas: [{ productoId: "7", quantity: "6" }, { descripcion: "Delantal del cliente", quantity: "2" }], zonas: [{ nombre: "Pecho", colores: 2 }] },
           lineas: [{ descripcion: "Base", color: "NEGRO", talla: "M", precioUnitario: 3.025 }, { descripcion: "Delantal del cliente", precioUnitario: 0 }] },
       }],
-      v_necesidades_pedidos: [
-        { id: 1, pedido_id: 1, numero: "P-2026/001", variante_id: 8, proveedor: "Proveedor Ficticio", marca: null, modelo: "Base", color: "NEGRO", talla: "L", cantidad: 2, estado: "pendiente" },
-        { id: 2, pedido_id: 2, numero: "P-2026/002", variante_id: 8, proveedor: "Proveedor Ficticio", marca: null, modelo: "Base", color: "NEGRO", talla: "L", cantidad: 4, estado: "pedida" },
-      ],
+      ...extraTablas,
     },
     rpcs: {
       ...Object.fromEntries(["crear_pedido_desde_presupuesto", "pedido_reservar", "pedido_consumir", "pedido_cambiar_estado", "pedido_necesidad_estado", "pedido_registrar_cobro", "pedido_terminar"].map((n) => [
@@ -74,7 +70,6 @@ const montar = (sb, ruta) =>
         <Routes>
           <Route path="/pedidos" element={<PaginaPedidos obtenerCliente={async () => sb} hoy="2026-10-22" />} />
           <Route path="/pedidos/nuevo" element={<PaginaNuevoPedido obtenerCliente={async () => sb} />} />
-          <Route path="/pedidos/necesidades" element={<PaginaNecesidades obtenerCliente={async () => sb} />} />
           <Route path="/pedidos/:id" element={<PaginaPedido obtenerCliente={async () => sb} />} />
         </Routes>
       </ProveedorDialogos>
@@ -120,7 +115,7 @@ describe("crear un pedido desde un presupuesto", () => {
 });
 
 describe("ficha del pedido", () => {
-  it("explica el siguiente paso y reserva solo lo confirmado, anotando lo que falta", async () => {
+  it("explica el siguiente paso y reserva solo lo confirmado; lo que falta va solo a Compras", async () => {
     const user = userEvent.setup();
     const { sb, llamadas } = crearSb();
     montar(sb, "/pedidos/1");
@@ -132,9 +127,9 @@ describe("ficha del pedido", () => {
     expect(within(propuesta).getByLabelText(/NEGRO M/).value).toBe("6");
     expect(within(propuesta).getByLabelText(/NEGRO L/).value).toBe("3"); // only 3 free
     await user.click(within(propuesta).getByRole("button", { name: "Confirmar" }));
-    expect((await screen.findByRole("alertdialog")).textContent).toMatch(/Las 2 que faltan quedan anotadas como compra pendiente/);
+    expect((await screen.findByRole("alertdialog")).textContent).toMatch(/Lo que falte aparece solo en «Compras»/);
     await aceptarDialogo(user, "Reservar");
-    expect(llamadas).toEqual([["pedido_reservar", { p_pedido_id: 1, p_lineas: [{ variante_id: 7, cantidad: 6 }, { variante_id: 8, cantidad: 3 }], p_registrar_faltantes: true }]]);
+    expect(llamadas).toEqual([["pedido_reservar", { p_pedido_id: 1, p_lineas: [{ variante_id: 7, cantidad: 6 }, { variante_id: 8, cantidad: 3 }], p_registrar_faltantes: false }]]);
   });
 
   it("anota prendas estropeadas y cancelar exige un motivo (opción avanzada)", async () => {
@@ -173,15 +168,21 @@ describe("ficha del pedido", () => {
   });
 });
 
-describe("material que falta", () => {
-  it("agrupa por proveedor y prenda: por comprar y pedido sin llegar; «ya pedidas» marca cada pedido", async () => {
-    const user = userEvent.setup();
-    const { sb, llamadas } = crearSb();
-    montar(sb, "/pedidos/necesidades");
-    const fila = (await screen.findByRole("region", { name: "Proveedor Ficticio" })).querySelector("tbody tr");
-    expect(fila.textContent).toMatch(/Base · NEGRO L\s*2\s*4.*P-2026\/001 \(2\).*P-2026\/002 \(4\)/);
-    await user.click(within(fila).getByRole("button", { name: "Ya pedidas" }));
-    expect(llamadas).toEqual([["pedido_necesidad_estado", { p_pedido_id: 1, p_variante_id: 8, p_estado: "pedida" }]]);
+describe("material y compras", () => {
+  it("lo que falta aparece por comprar (con enlace a Compras) o en camino con su compra; ya no hay que anotarlo", async () => {
+    const { sb } = crearSb({}, "pendiente_material", {
+      v_pedidos_material: [
+        { pedido_id: 1, variante_id: 7, modelo: "Base", color: "NEGRO", talla: "M", necesario: 6, reservado: 6, usado: 0, merma: 0, devuelto: 0, falta: 0, disponible_almacen: 0, pendiente_comprar: 0, pendiente_recibir: 0 },
+        { pedido_id: 1, variante_id: 8, modelo: "Base", color: "NEGRO", talla: "L", necesario: 5, reservado: 0, usado: 0, merma: 0, devuelto: 0, falta: 5, disponible_almacen: 0, pendiente_comprar: 3, pendiente_recibir: 2 },
+      ],
+      v_compras_lineas: [{ compra_id: 4, numero: "C-2026/004", variante_id: 8, pendiente: 2, estado: "pedida" }],
+    });
+    montar(sb, "/pedidos/1");
+    const fila = (await screen.findByText("Base · NEGRO L")).closest("tr");
+    expect(fila.textContent).toMatch(/3 por comprar\s*Ir a Compras\s*2 en camino · C-2026\/004/);
+    expect(within(fila).getByRole("link", { name: "C-2026/004" }).getAttribute("href")).toBe("/compras/4");
+    expect(screen.queryByRole("button", { name: "Ya pedidas" })).toBeNull();
+    expect(screen.getByText(/prepara la compra en «Compras»/)).toBeTruthy();
   });
 });
 

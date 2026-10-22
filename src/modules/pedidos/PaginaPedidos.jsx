@@ -65,7 +65,7 @@ function PaginaPedidos({ obtenerCliente = obtenerClienteSupabase, hoy = hoyIso()
       <Cabecera titulo="Pedidos" descripcion="Trabajos aceptados: material, producción, entrega y cobro."
         acciones={
           <>
-            <Link to="/pedidos/necesidades" className="btn btn-outline-secondary btn-icono"><PackageSearch size={16} aria-hidden="true" />Material que falta</Link>
+            <Link to="/compras" className="btn btn-outline-secondary btn-icono"><PackageSearch size={16} aria-hidden="true" />Compras</Link>
             <Link to="/presupuestos" className="btn btn-primary btn-icono"><ClipboardList size={16} aria-hidden="true" />Crear desde un presupuesto</Link>
           </>
         } />

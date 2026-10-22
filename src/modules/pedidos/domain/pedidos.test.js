@@ -48,7 +48,8 @@ describe("propuesta de reserva y siguiente paso", () => {
   });
   it("explica qué hacer en cada momento", () => {
     expect(siguientePaso(p({}), material)).toMatch(/Reservar prendas/);
-    expect(siguientePaso(p({}), [{ ...material[1], disponible_almacen: 0 }])).toMatch(/Faltan 5 prendas/);
+    expect(siguientePaso(p({}), [{ ...material[1], disponible_almacen: 0, pendiente_comprar: 5 }])).toMatch(/Faltan 5 prendas: prepara la compra en «Compras»/);
+    expect(siguientePaso(p({}), [{ ...material[1], disponible_almacen: 0, pendiente_comprar: 0, pendiente_recibir: 5 }])).toMatch(/ya pedidas al proveedor: cuando lleguen, se reservan solas/);
     expect(siguientePaso(p({}), [material[2]])).toMatch(/Listo para producción/);
     expect(siguientePaso(p({ estado: "entregado", cobro_estado: "parcial" }))).toMatch(/anota el cobro/);
   });

@@ -9,9 +9,10 @@ import { euros, eurosDecimal, leerNumero } from "../../shared/utils/dinero";
 import { InsigniaPedido, InsigniaCobro } from "./Insignias";
 import { ESTADOS_PEDIDO, accionesPedido, propuestaReserva, siguientePaso } from "./domain/pedidos";
 import {
-  obtenerPedido, actualizarPedido, cambiarEstadoPedido, registrarCobro, reservarPrendas, liberarPrendas, consumirPrendas, devolverPrendas, estadoNecesidad,
+  obtenerPedido, actualizarPedido, cambiarEstadoPedido, registrarCobro, reservarPrendas, liberarPrendas, consumirPrendas, devolverPrendas,
   prepararTerminar, terminarPedido,
 } from "./data/pedidosRepo";
+import { comprasPendientesDeVariantes } from "../compras/data/comprasRepo";
 
 const fechaHora = (iso) => new Date(iso).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" });
 const dia = (f) => (f ? String(f).slice(0, 10) : "");
@@ -26,7 +27,6 @@ function PaginaPedido({ obtenerCliente = obtenerClienteSupabase }) {
   const [mensaje, setMensaje] = useState(null);
   const [ocupado, setOcupado] = useState(false);
   const [propuesta, setPropuesta] = useState(null); // [{ variante_id, descripcion, falta, disponible, cantidad }]
-  const [registrarFaltantes, setRegistrarFaltantes] = useState(true);
   const [movimiento, setMovimiento] = useState(null); // { variante_id, tipo, cantidad, motivo, libres }
   const [mas, setMas] = useState(false);
   const [edicion, setEdicion] = useState(null); // { fecha_entrega, fecha_inicio_prevista, instrucciones, notas_internas }
@@ -36,8 +36,11 @@ function PaginaPedido({ obtenerCliente = obtenerClienteSupabase }) {
 
   const cargar = useCallback(async () => {
     try {
-      const d = await obtenerPedido(await obtenerCliente(), pedidoId);
-      setDatos(d);
+      const sb = await obtenerCliente();
+      const d = await obtenerPedido(sb, pedidoId);
+      // purchases on their way for these garments (what "en camino" refers to)
+      const compras = await comprasPendientesDeVariantes(sb, d.material.filter((m) => m.pendiente_recibir > 0).map((m) => m.variante_id));
+      setDatos({ ...d, compras });
       setCobro(String((d.pedido.importe_cobrado_cent ?? 0) / 100).replace(".", ","));
     } catch (e) {
       setMensaje({ tipo: "danger", texto: e.message });
@@ -66,7 +69,7 @@ function PaginaPedido({ obtenerCliente = obtenerClienteSupabase }) {
   };
 
   if (!datos) return mensaje ? <Aviso tipo="danger">{mensaje.texto}</Aviso> : <Cargando texto="Cargando pedido…" />;
-  const { pedido: p, lineas, eventos, material } = datos;
+  const { pedido: p, lineas, eventos, material, compras } = datos;
   const cerrado = p.estado === "cancelado" || p.estado === "entregado";
   const acciones = accionesPedido(p.estado);
   const avance = acciones.filter((a) => a.tipo === "avance");
@@ -92,13 +95,12 @@ function PaginaPedido({ obtenerCliente = obtenerClienteSupabase }) {
   const confirmarReserva = async () => {
     const lineasReserva = propuesta.filter((x) => x.cantidad > 0).map(({ variante_id, cantidad }) => ({ variante_id, cantidad }));
     const total = lineasReserva.reduce((s, x) => s + x.cantidad, 0);
-    const faltan = propuesta.reduce((s, x) => s + x.falta - x.cantidad, 0);
     if (!(await confirmar({
       titulo: `¿Reservar ${total} prendas para ${p.numero}?`,
-      mensaje: `Quedan apartadas para este pedido (no salen todavía del almacén).${registrarFaltantes && faltan > 0 ? ` Las ${faltan} que faltan quedan anotadas como compra pendiente.` : ""}`,
+      mensaje: "Quedan apartadas para este pedido (no salen todavía del almacén). Lo que falte aparece solo en «Compras».",
       aceptar: "Reservar",
     }))) return;
-    await ejecutar((sb) => reservarPrendas(sb, p.id, lineasReserva, registrarFaltantes), `${total} prendas reservadas.`);
+    await ejecutar((sb) => reservarPrendas(sb, p.id, lineasReserva, false), `${total} prendas reservadas.`);
   };
 
   const guardarMovimiento = async () => {
@@ -222,11 +224,13 @@ function PaginaPedido({ obtenerCliente = obtenerClienteSupabase }) {
                             {m.pendiente_comprar === 0 && m.pendiente_recibir === 0 ? <span className="text-muted">—</span> : (
                               <div className="gx-celda-lista">
                                 {m.pendiente_comprar > 0 && <span><strong>{m.pendiente_comprar}</strong> por comprar</span>}
-                                {m.pendiente_comprar > 0 && (
-                                  <button type="button" className="btn btn-link btn-sm p-0" disabled={ocupado}
-                                    onClick={() => ejecutar((sb) => estadoNecesidad(sb, p.id, m.variante_id, "pedida"), "Marcado como pedido al proveedor.")} title="Marcar estas prendas como ya pedidas al proveedor">Ya pedidas</button>
+                                {m.pendiente_comprar > 0 && <Link to="/compras">Ir a Compras</Link>}
+                                {m.pendiente_recibir > 0 && (
+                                  <span>
+                                    <strong>{m.pendiente_recibir}</strong> en camino
+                                    {compras.filter((x) => x.variante_id === m.variante_id).map((x) => <span key={x.compra_id}> · <Link to={`/compras/${x.compra_id}`}>{x.numero}</Link></span>)}
+                                  </span>
                                 )}
-                                {m.pendiente_recibir > 0 && <span><strong>{m.pendiente_recibir}</strong> pedidas, sin llegar</span>}
                               </div>
                             )}
                           </td>
@@ -251,12 +255,8 @@ function PaginaPedido({ obtenerCliente = obtenerClienteSupabase }) {
                         onChange={(e) => setPropuesta(propuesta.map((y, j) => (j === i ? { ...y, cantidad: Math.max(0, Math.min(Number(e.target.value) || 0, y.falta, y.disponible)) } : y)))} />
                     </div>
                   ))}
-                  <div className="form-check mt-2">
-                    <input id="res-faltantes" type="checkbox" className="form-check-input" checked={registrarFaltantes} onChange={(e) => setRegistrarFaltantes(e.target.checked)} />
-                    <label className="form-check-label small" htmlFor="res-faltantes">Anotar lo que falta como compra pendiente</label>
-                  </div>
                   <div className="d-flex gap-2 mt-2">
-                    <button type="button" className="btn btn-primary btn-sm" disabled={ocupado || propuesta.every((x) => x.cantidad === 0) && !registrarFaltantes} onClick={confirmarReserva}>Confirmar</button>
+                    <button type="button" className="btn btn-primary btn-sm" disabled={ocupado || propuesta.every((x) => x.cantidad === 0)} onClick={confirmarReserva}>Confirmar</button>
                     <button type="button" className="btn btn-outline-secondary btn-sm" onClick={() => setPropuesta(null)}>Cancelar</button>
                   </div>
                 </div>

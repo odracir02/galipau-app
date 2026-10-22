@@ -5,7 +5,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { crearBd, comoPropietario, comoIntruso, comoAnonimo, codigoError, PROPIETARIO, INTRUSO } from "./bd.js";
 
 let db;
-const TABLAS = ["clientes", "configuracion", "contadores", "importaciones", "importaciones_cambios", "modelos", "categorias", "clasificacion_cambios", "pedidos", "pedido_lineas", "pedido_eventos", "parametros_calculo", "presupuestos", "propietario", "proveedores", "registro_copias", "stock_articulos", "stock_movimientos", "stock_necesidades", "stock_reservas", "variantes", "variantes_tarifas"];
+const TABLAS = ["clientes", "configuracion", "contadores", "importaciones", "importaciones_cambios", "modelos", "categorias", "clasificacion_cambios", "pedidos", "pedido_lineas", "pedido_eventos", "compras", "compra_lineas", "compra_recepciones", "compra_recepcion_lineas", "compra_eventos", "parametros_calculo", "presupuestos", "propietario", "proveedores", "registro_copias", "stock_articulos", "stock_movimientos", "stock_necesidades", "stock_reservas", "variantes", "variantes_tarifas"];
 
 beforeAll(async () => {
   db = await crearBd();

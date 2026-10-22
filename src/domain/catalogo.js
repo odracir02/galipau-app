@@ -24,7 +24,7 @@ export const categoriaColor = (color) => {
 const unicos = (valores) => [...new Set(valores.filter((v) => v !== undefined && v !== null && v !== ""))];
 
 // Known sizes in garment order; unknown ones go last, alphabetically
-const posicionTalla = (t) => {
+export const posicionTalla = (t) => {
   const i = ORDEN_TALLAS.findIndex((x) => x.toLowerCase() === String(t).toLowerCase());
   return i === -1 ? ORDEN_TALLAS.length : i;
 };

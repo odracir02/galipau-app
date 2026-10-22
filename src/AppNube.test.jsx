@@ -43,7 +43,7 @@ describe("App en la nube — acceso", () => {
     expect(screen.getByRole("link", { name: "Nuevo presupuesto" }).getAttribute("href")).toBe("/presupuestos/nuevo");
     const menu = within(screen.getByRole("navigation", { name: "Navegación principal" }));
     expect(menu.getAllByRole("link").map((l) => l.textContent)).toEqual([
-      "Inicio", "Calculadora de costes", "Presupuestos", "Clientes", "Catálogo", "Pedidos", "ProducciónPronto", "Inventario",
+      "Inicio", "Calculadora de costes", "Presupuestos", "Clientes", "Catálogo", "Pedidos", "Compras", "ProducciónPronto", "Inventario",
     ]);
     expect(screen.getByRole("link", { name: "Configuración" }).getAttribute("href")).toBe("/configuracion");
     expect(screen.queryByRole("link", { name: "Versión antigua" })).toBeNull();

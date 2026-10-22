@@ -161,9 +161,10 @@ describe("reservas", () => {
   it("compara lo necesario con el almacén, reserva solo lo confirmado y registra lo que falta", async () => {
     await comoPropietario(db, async (tx) => {
       const id = await convertir(tx);
+      // what is missing counts as "to buy" without noting anything (purchases, 20261028)
       expect(await material(tx, id)).toEqual([
-        { talla: "M", necesario: 6, reservado: 0, usado: 0, merma: 0, devuelto: 0, falta: 6, disponible_almacen: 10, pendiente_comprar: 0, pendiente_recibir: 0 },
-        { talla: "L", necesario: 5, reservado: 0, usado: 0, merma: 0, devuelto: 0, falta: 5, disponible_almacen: 3, pendiente_comprar: 0, pendiente_recibir: 0 },
+        { talla: "M", necesario: 6, reservado: 0, usado: 0, merma: 0, devuelto: 0, falta: 6, disponible_almacen: 10, pendiente_comprar: 6, pendiente_recibir: 0 },
+        { talla: "L", necesario: 5, reservado: 0, usado: 0, merma: 0, devuelto: 0, falta: 5, disponible_almacen: 3, pendiente_comprar: 5, pendiente_recibir: 0 },
       ]);
       // partial reservation: all of M, the 3 available of L; the 2 missing L become a purchase need
       expect(await reservar(tx, id, [{ variante_id: F.v1, cantidad: 6 }, { variante_id: F.v2, cantidad: 3 }], true)).toEqual({ reservadas: 9 });

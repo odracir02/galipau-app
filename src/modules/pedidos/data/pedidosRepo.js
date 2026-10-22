@@ -38,7 +38,6 @@ export const liberarPrendas = (sb, id, varianteId = null) => rpc(sb, "pedido_lib
 export const consumirPrendas = (sb, id, varianteId, cantidad, tipo, motivo, desdeDisponible = false) =>
   rpc(sb, "pedido_consumir", { p_pedido_id: id, p_variante_id: varianteId, p_cantidad: cantidad, p_tipo: tipo, p_motivo: motivo || null, p_desde_disponible: desdeDisponible });
 export const devolverPrendas = (sb, id, varianteId, cantidad, motivo) => rpc(sb, "pedido_devolver", { p_pedido_id: id, p_variante_id: varianteId, p_cantidad: cantidad, p_motivo: motivo || null });
-export const estadoNecesidad = (sb, id, varianteId, estado) => rpc(sb, "pedido_necesidad_estado", { p_pedido_id: id, p_variante_id: varianteId, p_estado: estado });
 
 // What finishing would consume and what prevents it; null when the database does not have this yet
 export const prepararTerminar = async (sb, id) => {
@@ -48,6 +47,3 @@ export const prepararTerminar = async (sb, id) => {
 };
 // Consumes the pending reserved garments and finishes the order in one transaction
 export const terminarPedido = (sb, id, consumos) => rpc(sb, "pedido_terminar", { p_pedido_id: id, p_esperado: consumos.map(({ variante_id, cantidad }) => ({ variante_id, cantidad })) });
-
-export const listarNecesidades = async (sb) =>
-  leerTodo((desde, hasta) => sb.from("v_necesidades_pedidos").select("*").order("proveedor").order("modelo").range(desde, hasta));
