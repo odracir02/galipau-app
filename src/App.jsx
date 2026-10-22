@@ -19,6 +19,8 @@ import PaginaClientes from "./modules/clientes/PaginaClientes";
 import PaginaCatalogo from "./modules/catalogo/PaginaCatalogo";
 import PaginaProveedores from "./modules/catalogo/PaginaProveedores";
 import PaginaImportarTarifa from "./modules/tarifas/PaginaImportarTarifa";
+import PaginaClasificar from "./modules/catalogo/PaginaClasificar";
+import PaginaCategorias from "./modules/catalogo/PaginaCategorias";
 import { PaginaTarifas, PaginaImportacionTarifa } from "./modules/tarifas/PaginaTarifas";
 import PaginaFichaProveedor from "./modules/catalogo/PaginaFichaProveedor";
 import PaginaFichaModelo from "./modules/catalogo/PaginaFichaModelo";
@@ -57,6 +59,8 @@ function App({ servicioSesion }) {
                     <Route path="/catalogo/proveedores" element={<PaginaProveedores />} />
                     <Route path="/catalogo/proveedores/:id" element={<PaginaFichaProveedor />} />
                     <Route path="/catalogo/modelos/:id" element={<PaginaFichaModelo />} />
+                    <Route path="/catalogo/clasificar" element={<PaginaClasificar />} />
+                    <Route path="/catalogo/categorias" element={<PaginaCategorias />} />
                     <Route path="/catalogo/tarifas" element={<PaginaTarifas />} />
                     <Route path="/catalogo/tarifas/importar" element={<PaginaImportarTarifa />} />
                     <Route path="/catalogo/tarifas/:id" element={<PaginaImportacionTarifa />} />

@@ -141,7 +141,7 @@ describe("interfaz del catálogo", () => {
     await user.click(screen.getByRole("button", { name: "Nuevo modelo" }));
     const form = within(screen.getByRole("form", { name: "Nuevo modelo" }));
     await user.type(form.getByLabelText("Nombre del modelo *"), "Capucha");
-    await user.type(form.getByLabelText("Tipo de artículo *"), "Sudadera");
+    await user.type(form.getByLabelText("Categoría *"), "Sudadera");
     await user.click(form.getByRole("button", { name: "Crear y añadir variantes" }));
     expect(await screen.findByText("«Capucha» creado.")).toBeTruthy();
     expect(sb.tablas.modelos.at(-1)).toMatchObject({ proveedor_id: 1, tipo: "Sudadera", nombre: "Capucha", referencia: null });
@@ -163,7 +163,7 @@ describe("interfaz del catálogo", () => {
     await user.click(screen.getByRole("button", { name: "Nuevo producto propio" }));
     const form = within(screen.getByRole("form", { name: "Nuevo producto propio" }));
     await user.type(form.getByLabelText("Nombre del modelo *"), "Delantal");
-    await user.type(form.getByLabelText("Tipo de artículo *"), "Delantal");
+    await user.type(form.getByLabelText("Categoría *"), "Delantal");
     await user.click(form.getByRole("button", { name: "Crear y añadir variantes" }));
     await screen.findByText("«Delantal» creado.");
     expect(sb.tablas.modelos.at(-1)).toMatchObject({ proveedor_id: null, nombre: "Delantal" });
@@ -254,7 +254,7 @@ describe("catálogo grande: filtros por marca, tipo y modelo, y paginación", ()
     await user.selectOptions(screen.getByLabelText("Marca"), "Marca B");
     expect(await filas()).toHaveLength(50); // filtering goes back to page 1
     expect(screen.getByText("1–50 de 60")).toBeTruthy();
-    await user.selectOptions(screen.getByLabelText("Tipo"), "Sudadera");
+    await user.selectOptions(screen.getByLabelText("Categoría"), "Sudadera");
     expect(await filas()).toHaveLength(30);
     expect([...screen.getByLabelText("Modelo").options].map((o) => o.value)).toHaveLength(7); // "Todos" + models of Marca B
     await user.selectOptions(screen.getByLabelText("Modelo"), "Modelo 7");

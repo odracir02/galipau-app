@@ -13,14 +13,14 @@ const CAMPOS_PROVEEDOR = [
 ];
 const CAMPOS_MODELO = [
   { clave: "nombre", etiqueta: "Nombre del modelo *", ancho: "col-md-4" },
-  { clave: "tipo", etiqueta: "Tipo de artículo *", ancho: "col-md-3", lista: "tipos-articulo" },
+  { clave: "tipo", etiqueta: "Categoría *", ancho: "col-md-3", lista: "tipos-articulo" },
   { clave: "marca", etiqueta: "Marca", ancho: "col-md-2" },
   { clave: "referencia", etiqueta: "Referencia del fabricante", ancho: "col-md-3" },
   { clave: "descripcion", etiqueta: "Descripción", ancho: "col-md-12" },
 ];
 
 // Generic inline form with validation and a save/cancel pair
-function Formulario({ titulo, campos, inicial, validar, onGuardar, onCancelar, textoGuardar = "Guardar" }) {
+function Formulario({ titulo, campos, inicial, validar, onGuardar, onCancelar, textoGuardar = "Guardar", tipos = TIPOS_SUGERIDOS }) {
   const [datos, setDatos] = useState(() => Object.fromEntries(campos.map((c) => [c.clave, inicial?.[c.clave] ?? ""])));
   const [errores, setErrores] = useState([]);
   const [ocupado, setOcupado] = useState(false);
@@ -51,7 +51,7 @@ function Formulario({ titulo, campos, inicial, validar, onGuardar, onCancelar, t
           </div>
         ))}
       </div>
-      <datalist id="tipos-articulo">{TIPOS_SUGERIDOS.map((t) => <option key={t} value={t} />)}</datalist>
+      <datalist id="tipos-articulo">{tipos.map((t) => <option key={t} value={t} />)}</datalist>
       {errores.length > 0 && <div className="alert alert-danger small py-2 mt-2 mb-0" role="alert">{errores.join(" ")}</div>}
       <div className="d-flex gap-2 mt-3">
         <button type="submit" className="btn btn-sm btn-primary" disabled={ocupado}>{textoGuardar}</button>

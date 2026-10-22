@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Layers, Plus } from "lucide-react";
 import { obtenerClienteSupabase } from "../../shared/supabase/cliente";
 import { obtenerProveedor, actualizarProveedor, archivarProveedor, listarModelos, crearModelo } from "./data/catalogoRepo";
+import { listarCategorias } from "./data/clasificacionRepo";
 import { FormularioModelo, FormularioProveedor } from "./Formularios";
 import { useConfirmar } from "../../shared/ui/contextoDialogos";
 import Cargando from "../../shared/ui/Cargando";
@@ -27,11 +28,14 @@ function PaginaFichaProveedor({ obtenerCliente = obtenerClienteSupabase }) {
   const [busqueda, setBusqueda] = useState("");
   const [pagina, setPagina] = useState(1);
 
+  const [tipos, setTipos] = useState(undefined); // owner's categories for the model form
   const cargar = useCallback(async () => {
     try {
       const sb = await obtenerCliente();
       if (!propios) setProveedor(await obtenerProveedor(sb, proveedorId));
       setModelos(await listarModelos(sb, proveedorId));
+      const cats = await listarCategorias(sb).catch(() => null);
+      if (cats?.length) setTipos(cats.map((c) => c.nombre));
     } catch (e) {
       setMensaje({ tipo: "danger", texto: e.message });
       setModelos([]);
@@ -88,7 +92,7 @@ function PaginaFichaProveedor({ obtenerCliente = obtenerClienteSupabase }) {
               }} />
           )}
           {nuevoModelo && (
-            <FormularioModelo titulo={propios ? "Nuevo producto propio" : "Nuevo modelo"} onCancelar={() => setNuevoModelo(false)} textoGuardar="Crear y añadir variantes"
+            <FormularioModelo tipos={tipos} titulo={propios ? "Nuevo producto propio" : "Nuevo modelo"} onCancelar={() => setNuevoModelo(false)} textoGuardar="Crear y añadir variantes"
               onGuardar={async (d) => {
                 const m = await crearModelo(await obtenerCliente(), proveedorId, d);
                 setNuevoModelo(false);

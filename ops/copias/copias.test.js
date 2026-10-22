@@ -35,7 +35,7 @@ describe("manifiesto de la base de datos", () => {
     const db = await crearBd();
     await cargarDatos(db);
     const m = await manifiestoDe(db);
-    expect(Object.keys(m).sort()).toEqual(["clientes", "configuracion", "contadores", "importaciones", "importaciones_cambios", "modelos", "parametros_calculo", "presupuestos", "propietario", "proveedores", "registro_copias", "stock_articulos", "stock_movimientos", "stock_necesidades", "stock_reservas", "variantes", "variantes_tarifas"]);
+    expect(Object.keys(m).sort()).toEqual(["categorias", "clasificacion_cambios", "clientes", "configuracion", "contadores", "importaciones", "importaciones_cambios", "modelos", "parametros_calculo", "presupuestos", "propietario", "proveedores", "registro_copias", "stock_articulos", "stock_movimientos", "stock_necesidades", "stock_reservas", "variantes", "variantes_tarifas"]);
     expect(m.variantes.filas).toBe(36);
     expect(m.presupuestos.md5).toMatch(/^[0-9a-f]{32}$/);
     await db.close();
@@ -55,6 +55,7 @@ describe("manifiesto de la base de datos", () => {
       await db.exec("update public.presupuestos set creado_en = '2026-10-15T00:00:00Z', actualizado_en = '2026-10-15T00:00:00Z', historial_estados = '[]'");
       await db.exec("update public.configuracion set actualizado_en = '2026-10-15T00:00:00Z'");
       await db.exec("update public.propietario set creado_en = '2026-10-15T00:00:00Z'");
+      await db.exec("update public.categorias set creada_en = '2026-10-15T00:00:00Z'");
       await db.exec("set session_replication_role = origin");
     }
     expect(compararManifiestos(await manifiestoDe(a), await manifiestoDe(b))).toEqual([]);

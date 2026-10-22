@@ -3,6 +3,7 @@ import { Link, NavLink } from "react-router-dom";
 import { Package, Plus, Search } from "lucide-react";
 import { obtenerClienteSupabase } from "../../shared/supabase/cliente";
 import { listarCatalogoAdmin } from "./data/catalogoRepo";
+import { listarCategorias } from "./data/clasificacionRepo";
 import { describirPrecio, euro5 } from "./domain/catalogo";
 import { normalizarTexto } from "../../domain/catalogo";
 import Cabecera from "../../shared/ui/Cabecera";
@@ -18,6 +19,7 @@ export function NavCatalogo() {
     <nav className="d-flex flex-wrap gap-2 mb-3" aria-label="Secciones del catálogo">
       <NavLink end to="/catalogo" className={clase}>Productos</NavLink>
       <NavLink to="/catalogo/proveedores" className={clase}>Proveedores y productos propios</NavLink>
+      <NavLink to="/catalogo/clasificar" className={clase}>Clasificar</NavLink>
       <NavLink to="/catalogo/tarifas" className={clase}>Tarifas de proveedores</NavLink>
     </nav>
   );
@@ -32,13 +34,17 @@ function PaginaCatalogo({ obtenerCliente = obtenerClienteSupabase }) {
   const [filas, setFilas] = useState(null);
   const [error, setError] = useState(null);
   const [f, setF] = useState(FILTROS);
+  const [categorias, setCategorias] = useState(null);
   const [pagina, setPagina] = useState(1);
   const texto = useDeferredValue(f.texto); // typing stays fluid with thousands of rows
 
   useEffect(() => {
     (async () => {
       try {
-        setFilas(await listarCatalogoAdmin(await obtenerCliente()));
+        const sb = await obtenerCliente();
+        const [lista, cats] = await Promise.all([listarCatalogoAdmin(sb), listarCategorias(sb).catch(() => null)]);
+        setFilas(lista);
+        setCategorias(cats);
       } catch (e) {
         setError(e.message);
         setFilas([]);
@@ -51,11 +57,12 @@ function PaginaCatalogo({ obtenerCliente = obtenerClienteSupabase }) {
     // models offered for the chosen supplier and brand only
     const delProveedor = (filas ?? []).filter((r) => (!f.proveedor || (f.proveedor === PROPIOS ? r.propio : r.proveedor === f.proveedor)) && (!f.marca || (f.marca === SIN_MARCA ? !r.marca : r.marca === f.marca)));
     return {
-      proveedores: unicos("proveedor"), marcas: unicos("marca"), tipos: unicos("tipo"), colores: unicos("color"), tallas: unicos("talla"),
+      proveedores: unicos("proveedor"), marcas: unicos("marca"), // categories in the owner's order (alphabetical without the list), then any other type in use
+      tipos: [...(categorias ?? []).map((c) => c.nombre).filter((c) => (filas ?? []).some((r) => r.tipo === c)), ...unicos("tipo").filter((t) => !(categorias ?? []).some((c) => c.nombre === t))], colores: unicos("color"), tallas: unicos("talla"),
       modelos: [...new Set(delProveedor.map((r) => r.modelo))].sort((a, b) => a.localeCompare(b, "es")),
       hayPropios: (filas ?? []).some((r) => r.propio), haySinMarca: (filas ?? []).some((r) => !r.marca),
     };
-  }, [filas, f.proveedor, f.marca]);
+  }, [filas, categorias, f.proveedor, f.marca]);
 
   const visibles = useMemo(() => {
     const q = normalizarTexto(texto);
@@ -103,7 +110,7 @@ function PaginaCatalogo({ obtenerCliente = obtenerClienteSupabase }) {
         </div>
         {seleccion("cat-proveedor", "Proveedor", "proveedor", opciones.proveedores, "Todos", opciones.hayPropios && <option value={PROPIOS}>Productos propios</option>)}
         {seleccion("cat-marca", "Marca", "marca", opciones.marcas, "Todas", opciones.haySinMarca && opciones.marcas.length > 0 && <option value={SIN_MARCA}>Sin marca</option>)}
-        {seleccion("cat-tipo", "Tipo", "tipo", opciones.tipos)}
+        {seleccion("cat-tipo", "Categoría", "tipo", opciones.tipos, "Todas")}
         {seleccion("cat-modelo", "Modelo", "modelo", opciones.modelos)}
         {seleccion("cat-color", "Color", "color", opciones.colores)}
         {seleccion("cat-talla", "Talla", "talla", opciones.tallas, "Todas")}

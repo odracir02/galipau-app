@@ -363,6 +363,7 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase, tamanoL
       <p className="small text-muted">{hecho.fallos.length ? `Atención: ${hecho.fallos.length} cambios no se ven en el catálogo (${hecho.fallos.slice(0, 3).join("; ")}…).` : "Comprobado: todo está en el catálogo."}</p>
       <div className="d-flex flex-wrap gap-2">
         <Link to="/catalogo" className="btn btn-primary">Ver el catálogo</Link>
+        {hecho.resumen?.modelosNuevos > 0 && <Link to="/catalogo/clasificar" className="btn btn-outline-primary">Clasificar los {n(hecho.resumen.modelosNuevos)} modelos nuevos</Link>}
         <Link to={`/catalogo/tarifas/${hecho.id}`} className="btn btn-outline-secondary">Ver o deshacer esta importación</Link>
         <button type="button" className="btn btn-outline-secondary" onClick={empezarDeNuevo}>Importar otra tarifa</button>
       </div>
@@ -397,7 +398,7 @@ function PaginaImportarTarifa({ obtenerCliente = obtenerClienteSupabase, tamanoL
       </div>
       <ul className="small text-muted">
         <li>{lectura.formato.propuesta?.resumen}</li>
-        <li>Los modelos nuevos entran como «Sin clasificar»; el tipo de artículo se puede poner después en su ficha.</li>
+        <li>Los modelos nuevos entran como «Sin clasificar»; después se clasifican en bloque en «Clasificar», con sugerencias que tú confirmas.</li>
         {cuenta("descatalogada") > 0 && <li>{cuenta("descatalogada") === 1 ? "1 producto de tu catálogo no aparece en esta tarifa: se mantiene como está." : `${n(cuenta("descatalogada"))} productos de tu catálogo no aparecen en esta tarifa: se mantienen como están.`}</li>}
         <li>No cambian los presupuestos guardados ni el inventario. Se puede deshacer desde el historial.</li>
       </ul>

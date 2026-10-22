@@ -6,6 +6,7 @@ import {
   obtenerModelo, actualizarModelo, archivarModelo, obtenerProveedor, listarVariantes, crearVariantes, actualizarVariante, archivarVariante,
 } from "./data/catalogoRepo";
 import { interpretarPrecio, precioDeVariante, describirPrecio, costeEfectivo, euro5, validarVariante } from "./domain/catalogo";
+import { listarCategorias } from "./data/clasificacionRepo";
 import { FormularioModelo } from "./Formularios";
 import CampoPrecio from "./CampoPrecio";
 import AltaVariantes from "./AltaVariantes";
@@ -65,6 +66,7 @@ function PaginaFichaModelo({ obtenerCliente = obtenerClienteSupabase }) {
   const [archivadas, setArchivadas] = useState(false);
   const [mensaje, setMensaje] = useState(null);
 
+  const [tipos, setTipos] = useState(undefined); // owner's categories for the model form
   const cargar = useCallback(async () => {
     try {
       const sb = await obtenerCliente();
@@ -72,6 +74,8 @@ function PaginaFichaModelo({ obtenerCliente = obtenerClienteSupabase }) {
       setModelo(m);
       setProveedor(m.proveedor_id ? await obtenerProveedor(sb, m.proveedor_id) : null);
       setVariantes(await listarVariantes(sb, modeloId));
+      const cats = await listarCategorias(sb).catch(() => null);
+      if (cats?.length) setTipos(cats.map((c) => c.nombre));
     } catch (e) {
       setMensaje({ tipo: "danger", texto: e.message });
       setVariantes([]);
@@ -129,7 +133,7 @@ function PaginaFichaModelo({ obtenerCliente = obtenerClienteSupabase }) {
       </div>
       {mensaje && <Aviso tipo={mensaje.tipo}>{mensaje.texto}</Aviso>}
       {editandoModelo && (
-        <FormularioModelo titulo="Editar modelo" inicial={modelo} onCancelar={() => setEditandoModelo(false)}
+        <FormularioModelo tipos={tipos} titulo="Editar modelo" inicial={modelo} onCancelar={() => setEditandoModelo(false)}
           onGuardar={async (d) => {
             setModelo(await actualizarModelo(await obtenerCliente(), modeloId, d));
             setEditandoModelo(false);
